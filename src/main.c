@@ -1,7 +1,7 @@
 #include <errno.h>
-#include <unistd.h>
-#include <stdlib.h>
 #include <stdarg.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 #include "elf.h"
 #include "stdio.h"
@@ -87,7 +87,6 @@ void print_shdr(Elf64_Shdr *shdr) {
     printf("sh_entsize: %ld\n", shdr->sh_entsize);
 }
 
-// Usage: ./converter <ET_REL file> <functions file> <output ET_REL file>
 int main(int argc, char *argv[]) {
     if (argc != 4) {
         fatal("Usage: %s <ET_REL file> <functions file> <output ET_REL file>\n", argv[0]);
@@ -108,13 +107,40 @@ int main(int argc, char *argv[]) {
     print_ehdr(&ehdr);
     // TODO: handle e_shnum and e_shstrndx in initial entry
 
-    Elf64_Shdr *shdrs = malloc(ehdr.e_shentsize * ehdr.e_shnum);
+    size_t shdrs_size = ehdr.e_shentsize * ehdr.e_shnum;
+    Elf64_Shdr *shdrs = malloc(shdrs_size);
 
     if (shdrs == NULL) {
         sysfatal("malloc", "Could not allocate memory for section header table");
     }
     if (-1 == fseek(in, ehdr.e_shoff, SEEK_SET)) {
         sysfatal("fseek", "Could not set position to section header table");
+    }
+
+    size_t sections_read = 0;
+    while (sections_read < ehdr.e_shnum) {
+        size_t read = fread(shdrs + sections_read, ehdr.e_shentsize, ehdr.e_shnum - sections_read, in);
+        if (read <= 0 && ferror(in) != 0) {
+            sysfatal("fread", "Could not read section header table");
+        }
+        sections_read += read;
+    }
+
+    Elf64_Shdr strtab_section = shdrs[ehdr.e_shstrndx];
+    char *strtab = malloc(strtab_section.sh_size);
+    if (strtab == NULL) {
+        sysfatal("malloc", "Could not allocate memory for string table");
+    }
+    if (-1 == fseek(in, strtab_section.sh_offset, SEEK_SET)) {
+        sysfatal("fseek", "Could not set position to string table");
+    }
+    if (-1 == fread(strtab, strtab_section.sh_size, 1, in)) {
+        sysfatal("fread", "Could not read string table");
+    }
+
+    for (int i = 0; i < ehdr.e_shnum; i++) {
+        printf("\nSection %d: %s\n", i, strtab + shdrs[i].sh_name);
+        print_shdr(shdrs + i);
     }
 
     return 0;
