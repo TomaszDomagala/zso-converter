@@ -8,6 +8,11 @@ converter: src/main.c
 	@cp $(ROOT_DIR)/$@ $(ROOT_DIR)/example
 	@cp $(ROOT_DIR)/$@ $(ROOT_DIR)/z1_test
 
+test-64.o:
+	gcc -mcmodel=small -fno-pic -c example/test-64.c -o test-64.o
+
+test-32.o:
+	gcc -m32 -fno-pic -c example/test-64.c -o test-32.o
 
 .PHONY: help
 help:
