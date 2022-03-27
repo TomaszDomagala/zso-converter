@@ -4,7 +4,7 @@ ROOT_DIR = $(shell pwd)
 
 converter: src/main.c
 	@echo "Building..."
-	@gcc -Wall -Werror -O2 -o $@ $<
+	@gcc -Wall -O2 -o $@ $<
 	@cp $(ROOT_DIR)/$@ $(ROOT_DIR)/example
 	@cp $(ROOT_DIR)/$@ $(ROOT_DIR)/z1_test
 
