@@ -37,6 +37,8 @@ int main(int argc, char *argv[]) {
     fread(&ehdr, sizeof(ehdr), 1, in);
     fclose(in);
 
+    printf("e_ident[EI_OSABI]: %d\n", ehdr.e_ident[EI_OSABI]);
+    printf("e_ident[EI_ABIVERSION]: %d\n", ehdr.e_ident[EI_ABIVERSION]);
     printf("e_type: %d\n", ehdr.e_type);
     printf("e_machine: %d\n", ehdr.e_machine);
     printf("e_version: %d\n", ehdr.e_version);
