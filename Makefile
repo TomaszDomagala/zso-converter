@@ -3,8 +3,8 @@ all: converter
 ROOT_DIR = $(shell pwd)
 CC=gcc
 CFLAGS= -Wall -O2 -I./src
-DEPS = src/prints.h
-OBJ = prints.o main.o
+DEPS = src/prints.h src/fatal.h
+OBJ = main.o prints.o fatal.o
 
 %.o: src/%.c $(DEPS)
 	@$(CC) -c -o $@ $< $(CFLAGS)

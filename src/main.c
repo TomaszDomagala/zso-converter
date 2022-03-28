@@ -1,38 +1,11 @@
-#include <errno.h>
-#include <stdarg.h>
-#include <stdlib.h>
-#include <unistd.h>
 #include <elf.h>
+#include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "prints.h"
-
-
-
-void sysfatal(const char *func, const char *format, ...) __attribute__ ((noreturn));
-void fatal(const char *format, ...) __attribute__ ((noreturn));
-
-
-void sysfatal(const char *func, const char *format, ...) {
-    va_list argptr;
-    va_start(argptr, format);
-    vfprintf(stderr, format, argptr);
-    va_end(argptr);
-    fprintf(stderr, "%s: %s\n", func, strerror(errno));
-    fprintf(stderr, "errno: %d\n", errno);
-    exit(errno);
-}
-
-void fatal(const char *format, ...) {
-    va_list argptr;
-    va_start(argptr, format);
-    vfprintf(stderr, format, argptr);
-    va_end(argptr);
-    exit(1);
-}
-
-
 
 int main(int argc, char *argv[]) {
     if (argc != 4) {
@@ -85,15 +58,13 @@ int main(int argc, char *argv[]) {
         sysfatal("fread", "Could not read string table");
     }
 
-
-
     for (int i = 0; i < ehdr.e_shnum; i++) {
         printf("\nSection %d: %s\n", i, shstrtab + shdrs[i].sh_name);
         print_shdr(shdrs + i);
     }
 
     Elf64_Shdr symtab_section;
-    
+
     size_t symtab_found = 0;
     for (int i = 0; i < ehdr.e_shnum; i++) {
         if (shdrs[i].sh_type == SHT_SYMTAB) {
@@ -108,7 +79,7 @@ int main(int argc, char *argv[]) {
     if (!symtab_found) {
         fatal("No symbol table found\n");
     }
-    
+
     Elf64_Sym *symtab = malloc(symtab_section.sh_size);
     if (symtab == NULL) {
         sysfatal("malloc", "Could not allocate memory for symbol table");
@@ -137,7 +108,6 @@ int main(int argc, char *argv[]) {
         print_sym(symtab + i);
         printf("symbol type: %d\n", ELF64_ST_TYPE(symtab[i].st_info));
     }
-
 
     return 0;
 }
