@@ -21,3 +21,10 @@ void fatal(const char *format, ...) {
     va_end(argptr);
     exit(1);
 }
+
+void warn(const char *format, ...) {
+    va_list argptr;
+    va_start(argptr, format);
+    vfprintf(stderr, format, argptr);
+    va_end(argptr);
+}
