@@ -38,6 +38,20 @@
 //     uint64_t   sh_entsize;
 // } Elf64_Shdr;
 
+// typedef struct
+// {
+//   Elf64_Word	st_name;		/* Symbol name (string tbl index) */
+//   unsigned char	st_info;		/* Symbol type and binding */
+//   unsigned char st_other;		/* Symbol visibility */
+//   Elf64_Section	st_shndx;		/* Section index */
+//   Elf64_Addr	st_value;		/* Symbol value */
+//   Elf64_Xword	st_size;		/* Symbol size */
+// } Elf64_Sym;
+
+void sysfatal(const char *func, const char *format, ...) __attribute__ ((noreturn));
+void fatal(const char *format, ...) __attribute__ ((noreturn));
+
+
 void sysfatal(const char *func, const char *format, ...) {
     va_list argptr;
     va_start(argptr, format);
@@ -87,6 +101,16 @@ void print_shdr(Elf64_Shdr *shdr) {
     printf("sh_entsize: %ld\n", shdr->sh_entsize);
 }
 
+void print_sym(Elf64_Sym *sym) {
+    printf("st_name: %d\n", sym->st_name);
+    printf("st_info: %d\n", sym->st_info);
+    printf("st_other: %d\n", sym->st_other);
+    printf("st_shndx: %d\n", sym->st_shndx);
+    printf("st_value: %ld\n", sym->st_value);
+    printf("st_size: %ld\n", sym->st_size);
+}
+
+
 int main(int argc, char *argv[]) {
     if (argc != 4) {
         fatal("Usage: %s <ET_REL file> <functions file> <output ET_REL file>\n", argv[0]);
@@ -126,7 +150,54 @@ int main(int argc, char *argv[]) {
         sections_read += read;
     }
 
-    Elf64_Shdr strtab_section = shdrs[ehdr.e_shstrndx];
+    Elf64_Shdr shstrtab_section = shdrs[ehdr.e_shstrndx];
+    char *shstrtab = malloc(shstrtab_section.sh_size);
+    if (shstrtab == NULL) {
+        sysfatal("malloc", "Could not allocate memory for string table");
+    }
+    if (-1 == fseek(in, shstrtab_section.sh_offset, SEEK_SET)) {
+        sysfatal("fseek", "Could not set position to string table");
+    }
+    if (-1 == fread(shstrtab, shstrtab_section.sh_size, 1, in)) {
+        sysfatal("fread", "Could not read string table");
+    }
+
+
+
+    for (int i = 0; i < ehdr.e_shnum; i++) {
+        printf("\nSection %d: %s\n", i, shstrtab + shdrs[i].sh_name);
+        print_shdr(shdrs + i);
+    }
+
+    Elf64_Shdr symtab_section;
+    
+    size_t symtab_found = 0;
+    for (int i = 0; i < ehdr.e_shnum; i++) {
+        if (shdrs[i].sh_type == SHT_SYMTAB) {
+            if (symtab_found) {
+                fatal("Multiple symbol tables found\n");
+            }
+
+            symtab_section = shdrs[i];
+            symtab_found += 1;
+        }
+    }
+    if (!symtab_found) {
+        fatal("No symbol table found\n");
+    }
+    
+    Elf64_Sym *symtab = malloc(symtab_section.sh_size);
+    if (symtab == NULL) {
+        sysfatal("malloc", "Could not allocate memory for symbol table");
+    }
+    if (-1 == fseek(in, symtab_section.sh_offset, SEEK_SET)) {
+        sysfatal("fseek", "Could not set position to symbol table");
+    }
+    if (-1 == fread(symtab, symtab_section.sh_size, 1, in)) {
+        sysfatal("fread", "Could not read symbol table");
+    }
+
+    Elf64_Shdr strtab_section = shdrs[symtab_section.sh_link];
     char *strtab = malloc(strtab_section.sh_size);
     if (strtab == NULL) {
         sysfatal("malloc", "Could not allocate memory for string table");
@@ -138,10 +209,11 @@ int main(int argc, char *argv[]) {
         sysfatal("fread", "Could not read string table");
     }
 
-    for (int i = 0; i < ehdr.e_shnum; i++) {
-        printf("\nSection %d: %s\n", i, strtab + shdrs[i].sh_name);
-        print_shdr(shdrs + i);
+    for (int i = 0; i < symtab_section.sh_size / symtab_section.sh_entsize; i++) {
+        printf("\nSymbol %d: %s\n", i, strtab + symtab[i].st_name);
+        print_sym(symtab + i);
     }
+
 
     return 0;
 }
