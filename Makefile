@@ -1,10 +1,17 @@
 all: converter
 
 ROOT_DIR = $(shell pwd)
+CC=gcc
+CFLAGS= -Wall -O2 -I./src
+DEPS = src/prints.h
+OBJ = prints.o main.o
 
-converter: src/main.c
+%.o: src/%.c $(DEPS)
+	@$(CC) -c -o $@ $< $(CFLAGS)
+
+converter: $(OBJ)
 	@echo "Building..."
-	@gcc -Wall -O2 -o $@ $<
+	@gcc -o $@ $^ $(CFLAGS)
 	@cp $(ROOT_DIR)/$@ $(ROOT_DIR)/example
 	@cp $(ROOT_DIR)/$@ $(ROOT_DIR)/z1_test
 
