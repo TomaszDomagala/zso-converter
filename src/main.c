@@ -139,6 +139,7 @@ int main(int argc, char *argv[]) {
 
     // Erase file32 section header table
     memset(buf, 0, sizeof(buf));
+    
 
 
     return 0;
