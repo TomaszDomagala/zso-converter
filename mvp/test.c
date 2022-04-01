@@ -3,8 +3,18 @@
 
 extern int foo(int x);
 
+extern int bar(int x);
+
+int doo(int x){
+	return x + 1;
+}
+
 int real_main() {
-	return foo(1);
+	int x = 1;
+	x = foo(x);
+	x = bar(x);
+	
+	return x;
 }
 
 int main() {

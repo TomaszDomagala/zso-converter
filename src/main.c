@@ -78,9 +78,14 @@ struct Elf64_relfile read_relfile(char *filename) {
 }
 
 int main(int argc, char *argv[]) {
-    if (argc != 4) {
-        fatalf("Usage: %s <ET_REL file> <functions file> <output ET_REL file>\n", argv[0]);
+    
+    // if (argc != 4) {
+    //     fatalf("Usage: %s <ET_REL file> <functions file> <output ET_REL file>\n", argv[0]);
+    // }
+    if (argc != 2){ // TODO: remove this and replace with argc == 4 version
+        fatalf("Usage: %s <ET_REL file>\n", argv[0]);
     }
+
     struct Elf64_relfile elf64 = read_relfile(argv[1]);
 
     convert_elf(elf64.ehdr, elf64.shdrs, elf64.file);
