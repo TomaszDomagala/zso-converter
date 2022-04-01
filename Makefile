@@ -1,15 +1,16 @@
-all: converter
+all: help
 
 ROOT_DIR = $(shell pwd)
 CC=gcc
-CFLAGS= -Wall -O2 -I./src
-DEPS = src/prints.h src/fatal.h
-OBJ = main.o prints.o fatal.o
+CFLAGS= -Wall -Wextra -O2 -I./src
+DEPS = src/prints.h src/fatal.h src/converter.h
+OBJ = main.o prints.o fatal.o converter.o
 
 %.o: src/%.c $(DEPS)
 	@$(CC) -c -o $@ $< $(CFLAGS)
 
 converter: $(OBJ)
+converter: ## Build the converter
 	@echo "Building..."
 	@gcc -o $@ $^ $(CFLAGS)
 	@cp $(ROOT_DIR)/$@ $(ROOT_DIR)/example
@@ -20,6 +21,11 @@ test-64.o:
 
 test-32.o:
 	gcc -m32 -fno-pic -c example/test-64.c -o test-32.o
+
+.PHONY: clean
+clean:	## Clean up
+	@rm -f *.o test
+	@rm -f converter
 
 .PHONY: help
 help:

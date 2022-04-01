@@ -7,6 +7,7 @@
 
 #include "fatal.h"
 #include "prints.h"
+#include "converter.h"
 
 struct Elf64_relfile {
     Elf64_Ehdr ehdr;
@@ -20,18 +21,20 @@ struct Elf64_relfile read_relfile(char *filename) {
 
     // Load file header
     if (!ret.file) {
-        sysfatal("fopen", "Could not open %s\n", filename);
+        sysfatalf("fopen", "Could not open %s\n", filename);
     }
-    if (-1 == fread(&ret.ehdr, sizeof(ret.ehdr), 1, ret.file)) {
-        sysfatal("fread", "Could not read %s\n", filename);
+    fread(&ret.ehdr, sizeof(ret.ehdr), 1, ret.file);
+    if (ferror(ret.file)) {
+        sysfatalf("fread", "Could not read %s\n", filename);
     }
+
     if (ret.ehdr.e_type != ET_REL) {
-        fatal("%s is not an ET_REL file\n", filename);
+        fatalf("%s is not an ET_REL file\n", filename);
     }
-    if (ret.ehdr.e_machine != EM_X86_64){
-        fatal("%s is not an EM_X86_64 file\n", filename);
+    if (ret.ehdr.e_machine != EM_X86_64) {
+        fatalf("%s is not an EM_X86_64 file\n", filename);
     }
-    if(ret.ehdr.e_entry != 0) {
+    if (ret.ehdr.e_entry != 0) {
         // Assert that entry point is not present.
         warn("Assertion failed: entry point found, but not expected\n");
     }
@@ -48,7 +51,6 @@ struct Elf64_relfile read_relfile(char *filename) {
         warn("Assertion failed: program header number found, but not expected\n");
     }
 
-    
     if (ret.ehdr.e_shoff == 0) {
         fatal("No section header table found\n");
     }
@@ -77,70 +79,21 @@ struct Elf64_relfile read_relfile(char *filename) {
 
 int main(int argc, char *argv[]) {
     if (argc != 4) {
-        fatal("Usage: %s <ET_REL file> <functions file> <output ET_REL file>\n", argv[0]);
+        fatalf("Usage: %s <ET_REL file> <functions file> <output ET_REL file>\n", argv[0]);
     }
     struct Elf64_relfile elf64 = read_relfile(argv[1]);
 
-    print_ehdr(&elf64.ehdr);
-    // print section header table
+    convert_elf(elf64.ehdr, elf64.shdrs, elf64.file);
+
+    // print_ehdr(&elf64.ehdr);
+    // // print section header table
     // printf("Section header table:\n");
     // for (int i = 0; i < elf64.ehdr.e_shnum; i++) {
     //     print_shdr(elf64.shdrs + i);
     //     printf("\n");
     // }
 
-
-    Elf32_Ehdr ehdr32;
-    memcpy(&ehdr32.e_ident, &elf64.ehdr.e_ident, sizeof(ehdr32.e_ident));
-    ehdr32.e_ident[EI_CLASS] = ELFCLASS32;
-    ehdr32.e_type = ET_REL;
-    ehdr32.e_machine = EM_386;
-    ehdr32.e_version = EV_CURRENT;
-    ehdr32.e_entry = 0;
-    ehdr32.e_phoff = 0;
-    ehdr32.e_shoff = elf64.ehdr.e_shoff; // TODO: fix this, different int sizes
-    ehdr32.e_flags = elf64.ehdr.e_flags;
-    ehdr32.e_ehsize = sizeof(Elf32_Ehdr);
-    ehdr32.e_phentsize = 0;
-    ehdr32.e_phnum = 0;
-    ehdr32.e_shentsize = elf64.ehdr.e_shentsize;
-    ehdr32.e_shnum = elf64.ehdr.e_shnum;
-    ehdr32.e_shstrndx = elf64.ehdr.e_shstrndx;
-
-    FILE* file32 = fopen(argv[3], "wb");
-    if (!file32) {
-        sysfatal("fopen", "Could not open %s\n", argv[3]);
-    }
-
-    if(-1 == fseek(elf64.file, 0, SEEK_SET)) {
-        sysfatal("fseek", "Could not set position to 0");
-    }
-    char buf[4096];
-    while(!feof(elf64.file)) {
-        size_t read = fread(buf, 1, sizeof(buf), elf64.file);
-        if (read <= 0 && ferror(elf64.file) != 0) {
-            sysfatal("fread", "Could not read %s\n", argv[1]);
-        }
-        if(read == 0) {
-            break;
-        }
-        if(read > fwrite(buf, 1, read, file32)) {
-            sysfatal("fwrite", "Could not write to %s\n", argv[3]);
-        }
-    }
-    clearerr(elf64.file);
-
-    if (-1 == fseek(file32, 0, SEEK_SET)) {
-        sysfatal("fseek", "Could not set position to 0");
-    }
-    if (-1 == fwrite(&ehdr32, sizeof(ehdr32), 1, file32)) {
-        sysfatal("fwrite", "Could not write to %s\n", argv[3]);
-    }
-
-    // Erase file32 section header table
-    memset(buf, 0, sizeof(buf));
-    
-
+   
 
     return 0;
 }
