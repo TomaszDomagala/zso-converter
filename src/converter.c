@@ -23,30 +23,35 @@ struct section64 {
     void *data;
 };
 
+void write_section64_data(FILE *file, struct section64 *section){
+    if (section->header.sh_type == SHT_NULL) {
+        return;
+    }
+    if (section->header.sh_size == 0) {
+        return;
+    }
 
+    long current_pos = ftell(file);
+    if (section->header.sh_addralign > 1 && current_pos % section->header.sh_addralign != 0){
+        long padding = section->header.sh_addralign - (current_pos % section->header.sh_addralign);
+        void* padding_data = calloc(padding, 1);
+        fwrite(padding_data, padding, 1, file);
+        if (ferror(file)){
+            sysfatal("fwrite", "could not write padding data to file\n");
+        }
+        free(padding_data);
+        current_pos += padding;
+    }
+    
+    section->header.sh_offset = current_pos;
+    fwrite(section->data, section->header.sh_size, 1, file);
+    if (ferror(file)){
+        sysfatal("fwrite", "could not write section data to file\n");
+    }
+}
 
 
 void convert_elf(Elf64_Ehdr ehdr64, Elf64_Shdr *shdrs64, FILE *elf64file) {
-    // Elf32_Ehdr ehdr32 = initial_convert_hdr(ehdr64);
-    // Elf32_Shdr *shdrs32 = initial_convert_shdrs(shdrs64, ehdr64.e_shnum);
-
-    Elf64_Shdr symtab_shdr = find_shdr64(shdrs64, ehdr64.e_shnum, SHT_SYMTAB);
-    Elf64_Sym *symtab64 = load_section64(symtab_shdr, elf64file);
-
-    Elf64_Shdr strtab_shdr = shdrs64[symtab_shdr.sh_link];
-    char *strtab = load_section64(strtab_shdr, elf64file);
-
-    Elf64_Shdr shstrtab_shdr = shdrs64[ehdr64.e_shstrndx];
-    char *shstrtab = load_section64(shstrtab_shdr, elf64file);
-
-    // Elf64_Shdr text_shdr = find_shdr64_by_name(shdrs64, ehdr64.e_shnum, ".text", shstrtab);
-
-
-    // print sections offsets
-    // for (int i = 0; i < ehdr64.e_shnum; i++) {
-    //     Elf64_Shdr shdr = shdrs64[i];
-    //     printf("%s: %d\n", shstrtab + shdr.sh_name, shdr.sh_offset);
-    // }
 
     struct section64* sections;
     sections = malloc(sizeof(struct section64) * ehdr64.e_shnum);
@@ -57,140 +62,34 @@ void convert_elf(Elf64_Ehdr ehdr64, Elf64_Shdr *shdrs64, FILE *elf64file) {
         sections[i].data = load_section64(shdr, elf64file);
     }
 
+    FILE* newfile = fopen("newelf.o", "wb");
+    if (!newfile) {
+        sysfatal("fopen", "could not open newelf.o\n");
+    }
+
+    if (-1 == fseek(newfile, sizeof(Elf64_Shdr), SEEK_SET)) {
+        sysfatal("fseek", "could not seek to beginning of data\n");
+    }
+
     for (int i = 0; i < ehdr64.e_shnum; i++) {
-        Elf64_Shdr shdr = shdrs64[i];
-        printf("%s: %ld\n", shstrtab + shdr.sh_name, shdr.sh_offset);
+        write_section64_data(newfile, &sections[i]);
     }
 
-
-    // // find symbols "foo" and "bar"
-    // uint64_t symnum = symtab_shdr.sh_size / symtab_shdr.sh_entsize;
-    // Elf64_Sym *foo_sym = find_symbol_by_name(symtab64, symnum, "foo", strtab);
-    // Elf64_Sym *bar_sym = find_symbol_by_name(symtab64, symnum, "bar", strtab);
-
-    // bar_sym->st_value = foo_sym->st_value;
-    // bar_sym->st_size = foo_sym->st_size;
-    // bar_sym->st_info = foo_sym->st_info;
-    // bar_sym->st_other = foo_sym->st_other;
-    // bar_sym->st_shndx = foo_sym->st_shndx;
-
-
-    FILE *newelf64file = fopen("new.elf", "wb");
-    if (newelf64file == NULL) {
-        sysfatal("fopen", "cannot create new.elf file");
-    }
-
-    if (-1 == fseek(elf64file, sizeof(Elf64_Ehdr), SEEK_SET)) {
-        sysfatal("fseek", "cannot seek to the beginning of the file");
-    }
-
-
-    size_t total = 0;
+    ehdr64.e_shoff = ftell(newfile);
     for (int i = 0; i < ehdr64.e_shnum; i++) {
-        struct section64* section = &sections[i];
-        if(section->header.sh_addr != 0) {
-            fatalf("section %d has non-zero sh_addr", i);
-        }
-
-        long pos = ftell(newelf64file);
-        section->header.sh_offset = pos;
-
-        if(section->header.sh_size == 0) {
-            continue;
-        }
-
-        fwrite(section->data, section->header.sh_size, 1, newelf64file);
-        total += section->header.sh_size;
-        if (ferror(newelf64file)) {
-            sysfatal("fwrite", "cannot write section data to new.elf file");
+        Elf64_Shdr shdr = sections[i].header;
+        fwrite(&shdr, sizeof(Elf64_Shdr), 1, newfile);
+        if (ferror(newfile)){
+            sysfatal("fwrite", "could not write section header to file\n");
         }
     }
-    printf("total: %ld\n", total);
-    ehdr64.e_shoff = sizeof(Elf64_Ehdr) + total;
-    for (int i = 0; i < ehdr64.e_shnum; i++) {
-        struct section64* section = &sections[i];
-
-        fwrite(&section->header, sizeof(Elf64_Shdr), 1, newelf64file);
-        if (ferror(newelf64file)) {
-            sysfatal("fwrite", "cannot write section header to new.elf file");
-        }
+    if (-1 == fseek(newfile, 0, SEEK_SET)) {
+        sysfatal("fseek", "could not seek to beginning of file\n");
     }
-
-    if (-1 == fseek(newelf64file, 0, SEEK_SET)) {
-        sysfatal("fseek", "cannot seek to the beginning of the file");
+    fwrite(&ehdr64, sizeof(Elf64_Ehdr), 1, newfile);
+    if (ferror(newfile)){
+        sysfatal("fwrite", "could not write elf header to file\n");
     }
-    fwrite(&ehdr64, sizeof(Elf64_Ehdr), 1, newelf64file);
-    if (ferror(newelf64file)) {
-        sysfatal("fwrite", "cannot write file header");
-    }
-
-
-    // char buf[4096];
-    // while (true) {
-    //     size_t n = fread(buf, 1, sizeof(buf), elf64file);
-    //     if (n == 0) {
-    //         if (ferror(elf64file)) {
-    //             sysfatal("fread", "cannot read from elf64file");
-    //         }
-    //         break;
-    //     }
-    //     size_t w = 0;
-    //     while (w < n) {
-    //         size_t ww = fwrite(buf + w, 1, n - w, newelf64file);
-    //         if (ww == 0 && ferror(newelf64file)) {
-    //             sysfatal("fwrite", "cannot write to newelf64file");
-    //         }
-    //         w += ww;
-    //     }
-    // }
-
-    // // copy modified symtab to new.elf
-    // if (-1 == fseek(newelf64file, symtab_shdr.sh_offset, SEEK_SET)) {
-    //     sysfatal("fseek", "cannot seek to symtab_shdr.sh_offset");
-    // }
-    // fwrite(symtab64, symtab_shdr.sh_size, 1, newelf64file);
-    // if (ferror(newelf64file)) {
-    //     sysfatal("fwrite", "cannot write to newelf64file");
-    // }
-
-
-    // // .rela.text section
-    // Elf64_Shdr rela_text_shdr = find_shdr64_by_name(shdrs64, ehdr64.e_shnum, ".rela.text", shstrtab);
-    // Elf64_Rela *rela_text = load_shdr64(rela_text_shdr, elf64file);
-
-    // uint64_t relnum = rela_text_shdr.sh_size / rela_text_shdr.sh_entsize;
-
-    // for (uint64_t i = 0; i < relnum; i++) {
-    //     Elf64_Rela rela = rela_text[i];
-    //     Elf64_Sym sym = symtab64[ELF64_R_SYM(rela.r_info)];
-    //     char *sym_name = &strtab[sym.st_name];
-    //     // print values in hex
-    //     printf("\nst_name: %s\n", sym_name);
-    //     printf("r_offset: %lx\n", rela.r_offset);
-    //     printf("r_type: %lx\n", ELF64_R_TYPE(rela.r_info));
-        
-    //     // if (strcmp(sym_name, "doo") == 0) {
-    //         // printf("%s\n", sym_name);
-    //     // }
-    // }
-
-    // uint64_t symnum = symtab_shdr.sh_size / symtab_shdr.sh_entsize;
-
-    // for (uint64_t i = 0; i < symnum; i++) {
-    //     Elf64_Sym sym = symtab64[i];
-    //     printf("\n");
-    //     printf("st_name: %s\n", strtab + sym.st_name);
-    //     printf("st_value: %ld\n", sym.st_value);
-    //     printf("st_size: %ld\n", sym.st_size);
-    //     printf("st_info: %d\n", sym.st_info);
-    //     printf("st_other: %d\n", sym.st_other);
-    //     printf("st_shndx: %d\n", sym.st_shndx);
-    
-    // }
-
-
-
-
 }
 
 void *load_section64(Elf64_Shdr shdr, FILE *elf64file) {
