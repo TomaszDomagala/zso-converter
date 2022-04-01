@@ -19,8 +19,8 @@ converter: ## Build the converter
 test-64.o: mvp/test-64.c
 	gcc -mcmodel=small -fno-pic -c mvp/test-64.c -o test-64.o
 
-# test-32.o: mvp/test-64.c
-# 	gcc -m32 -fno-pic -c mvp/test-64.c -o test-32.o
+test-32.o: mvp/test-64.c
+	gcc -m32 -fno-pic -c mvp/test-64.c -o test-32.o
 
 .PHONY: clean
 clean:	## Clean up

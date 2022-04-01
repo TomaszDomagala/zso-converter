@@ -9,85 +9,81 @@
 
 #include "fatal.h"
 
-Elf32_Ehdr initial_convert_hdr(Elf64_Ehdr ehdr64);
-Elf32_Shdr *initial_convert_shdrs(Elf64_Shdr *shdrs64, int shnum);
-Elf64_Shdr find_shdr64(Elf64_Shdr *shdrs64, Elf64_Half shnum, Elf64_Word sh_type);
-Elf64_Shdr find_shdr64_by_name(Elf64_Shdr *shdrs64, Elf64_Half shnum, const char *name, char *shstrtab);
-void *load_section64(Elf64_Shdr shdr, FILE *elf64file);
-
-Elf64_Sym* find_symbol_by_name(Elf64_Sym *syms64, Elf64_Half num_syms, const char *name, char *strtab);
-
-
 struct section64 {
     Elf64_Shdr header;
     void *data;
 };
 
-void write_section64_data(FILE *file, struct section64 *section){
-    if (section->header.sh_type == SHT_NULL) {
-        return;
-    }
-    if (section->header.sh_size == 0) {
-        return;
-    }
+struct section32 {
+    Elf32_Shdr header;
+    void *data;
+};
 
-    long current_pos = ftell(file);
-    if (section->header.sh_addralign > 1 && current_pos % section->header.sh_addralign != 0){
-        long padding = section->header.sh_addralign - (current_pos % section->header.sh_addralign);
-        void* padding_data = calloc(padding, 1);
-        fwrite(padding_data, padding, 1, file);
-        if (ferror(file)){
-            sysfatal("fwrite", "could not write padding data to file\n");
-        }
-        free(padding_data);
-        current_pos += padding;
-    }
-    
-    section->header.sh_offset = current_pos;
-    fwrite(section->data, section->header.sh_size, 1, file);
-    if (ferror(file)){
-        sysfatal("fwrite", "could not write section data to file\n");
-    }
-}
+Elf32_Ehdr initial_convert_hdr(Elf64_Ehdr ehdr64);
+Elf32_Shdr initial_convert_shdr(Elf64_Shdr shdr64);
+Elf64_Shdr find_shdr64(Elf64_Shdr *shdrs64, Elf64_Half shnum, Elf64_Word sh_type);
+Elf64_Shdr find_shdr64_by_name(Elf64_Shdr *shdrs64, Elf64_Half shnum, const char *name, char *shstrtab);
+void *load_section64(Elf64_Shdr shdr, FILE *elf64file);
 
+Elf64_Sym *find_symbol_by_name(Elf64_Sym *syms64, Elf64_Half num_syms, const char *name, char *strtab);
+void write_section32_data(FILE *file, struct section32 *section);
 
 void convert_elf(Elf64_Ehdr ehdr64, Elf64_Shdr *shdrs64, FILE *elf64file) {
-
-    struct section64* sections;
-    sections = malloc(sizeof(struct section64) * ehdr64.e_shnum);
+    struct section32 *sections;
+    sections = malloc(sizeof(struct section32) * ehdr64.e_shnum);
 
     for (int i = 0; i < ehdr64.e_shnum; i++) {
         Elf64_Shdr shdr = shdrs64[i];
-        sections[i].header = shdr;
+        sections[i].header = initial_convert_shdr(shdr);
         sections[i].data = load_section64(shdr, elf64file);
     }
 
-    FILE* newfile = fopen("newelf.o", "wb");
+    Elf32_Ehdr ehdr32 = initial_convert_hdr(ehdr64);
+
+    for (int i = 0; i < ehdr32.e_shnum; i++) {
+        Elf32_Shdr ehdr32 = sections[i].header;
+        printf("\n");
+        printf("sh_name: %d\n", ehdr32.sh_name);
+        printf("sh_type: %d\n", ehdr32.sh_type);
+        printf("sh_flags: %d\n", ehdr32.sh_flags);
+        printf("sh_addr: %d\n", ehdr32.sh_addr);
+        printf("sh_offset: %d\n", ehdr32.sh_offset);
+        printf("sh_size: %d\n", ehdr32.sh_size);
+        printf("sh_link: %d\n", ehdr32.sh_link);
+        printf("sh_info: %d\n", ehdr32.sh_info);
+        printf("sh_addralign: %d\n", ehdr32.sh_addralign);
+        printf("sh_entsize: %d\n", ehdr32.sh_entsize);
+    }
+
+    printf("e_shnum: %d\n", ehdr32.e_shnum);
+    FILE *newfile = fopen("newelf.o", "wb");
     if (!newfile) {
         sysfatal("fopen", "could not open newelf.o\n");
     }
 
-    if (-1 == fseek(newfile, sizeof(Elf64_Shdr), SEEK_SET)) {
+    if (-1 == fseek(newfile, sizeof(Elf32_Ehdr), SEEK_SET)) {
         sysfatal("fseek", "could not seek to beginning of data\n");
     }
 
-    for (int i = 0; i < ehdr64.e_shnum; i++) {
-        write_section64_data(newfile, &sections[i]);
+    for (int i = 0; i < ehdr32.e_shnum; i++) {
+        write_section32_data(newfile, &sections[i]);
     }
+    ehdr32.e_shoff = ftell(newfile);
 
-    ehdr64.e_shoff = ftell(newfile);
-    for (int i = 0; i < ehdr64.e_shnum; i++) {
-        Elf64_Shdr shdr = sections[i].header;
-        fwrite(&shdr, sizeof(Elf64_Shdr), 1, newfile);
-        if (ferror(newfile)){
+    for (int i = 0; i < ehdr32.e_shnum; i++) {
+        Elf32_Shdr shdr = sections[i].header;
+        fwrite(&shdr, sizeof(Elf32_Shdr), 1, newfile);
+        if (ferror(newfile)) {
             sysfatal("fwrite", "could not write section header to file\n");
         }
     }
     if (-1 == fseek(newfile, 0, SEEK_SET)) {
         sysfatal("fseek", "could not seek to beginning of file\n");
     }
-    fwrite(&ehdr64, sizeof(Elf64_Ehdr), 1, newfile);
-    if (ferror(newfile)){
+    printf("e_shoff: %d\n", ehdr32.e_shoff);
+    printf("e_ehsize: %d\n", ehdr32.e_ehsize);
+    fwrite(&ehdr32, sizeof(Elf32_Ehdr), 1, newfile);
+    if (ferror(newfile)) {
         sysfatal("fwrite", "could not write elf header to file\n");
     }
 }
@@ -147,7 +143,7 @@ Elf64_Shdr find_shdr64_by_name(Elf64_Shdr *shdrs64, Elf64_Half shnum, const char
     return shdrs64[index];
 }
 
-Elf64_Sym* find_symbol_by_name(Elf64_Sym *syms64, Elf64_Half num_syms, const char *name, char *strtab){
+Elf64_Sym *find_symbol_by_name(Elf64_Sym *syms64, Elf64_Half num_syms, const char *name, char *strtab) {
     Elf64_Half index;
     int found = 0;
 
@@ -168,16 +164,16 @@ Elf64_Sym* find_symbol_by_name(Elf64_Sym *syms64, Elf64_Half num_syms, const cha
 
 Elf32_Ehdr initial_convert_hdr(Elf64_Ehdr ehdr64) {
     Elf32_Ehdr ehdr32;
-    memcpy(&ehdr32.e_ident, ehdr64.e_ident, sizeof(ehdr32.e_ident));
+    memcpy(ehdr32.e_ident, ehdr64.e_ident, sizeof(ehdr32.e_ident));
     ehdr32.e_ident[EI_CLASS] = ELFCLASS32;
     ehdr32.e_type = ET_REL;
     ehdr32.e_machine = EM_386;
     ehdr32.e_version = EV_CURRENT;
     ehdr32.e_entry = 0;
     ehdr32.e_phoff = 0;
-    ehdr32.e_shoff = ehdr64.e_shoff;  // TODO: fix this, different int sizes
+    ehdr32.e_shoff = (Elf32_Off)ehdr64.e_shoff;  // TODO: fix this, different int sizes
     ehdr32.e_flags = ehdr64.e_flags;
-    ehdr32.e_ehsize = sizeof(Elf32_Ehdr);
+    ehdr32.e_ehsize = (Elf32_Half)52;
     ehdr32.e_phentsize = 0;
     ehdr32.e_phnum = 0;
     ehdr32.e_shentsize = sizeof(Elf32_Shdr);
@@ -188,30 +184,52 @@ Elf32_Ehdr initial_convert_hdr(Elf64_Ehdr ehdr64) {
 }
 
 /**
- * @brief Initial convert section header table from 64-bit to 32-bit.
- * 
- * @param shdrs64 The elf64 section header table.
- * @param shnum The number of section headers in the table.
- * @return Elf32_Shdr* The converted section header table.
+ * @brief Initial convert symbol table from 64-bit to 32-bit.
+ *
+ * @param shdr64 The elf64 section header table.
+ * @return Elf32_Shdr The converted section header table.
  */
-Elf32_Shdr *initial_convert_shdrs(Elf64_Shdr *shdrs64, int shnum) {
-    Elf32_Shdr *shdrs32 = malloc(sizeof(Elf32_Shdr) * shnum);
-    if (shdrs32 == NULL) {
-        sysfatal("malloc", "could not allocate memory for section header table");
+Elf32_Shdr initial_convert_shdr(Elf64_Shdr shdr64) {
+    Elf32_Shdr shdr32;
+
+    shdr32.sh_name = (Elf32_Word)shdr64.sh_name;
+    shdr32.sh_type = (Elf32_Word)shdr64.sh_type;
+    shdr32.sh_flags = (Elf32_Word)shdr64.sh_flags;
+    shdr32.sh_addr = (Elf32_Addr)shdr64.sh_addr;
+    shdr32.sh_offset = (Elf32_Off)shdr64.sh_offset;
+    shdr32.sh_size = (Elf32_Word)shdr64.sh_size;
+    shdr32.sh_link = (Elf32_Word)shdr64.sh_link;
+    shdr32.sh_info = (Elf32_Word)shdr64.sh_info;
+    shdr32.sh_addralign = (Elf32_Word)shdr64.sh_addralign;
+    shdr32.sh_entsize = (Elf32_Word)shdr64.sh_entsize;
+
+    return shdr32;
+}
+
+void write_section32_data(FILE *file, struct section32 *section) {
+    if (section->header.sh_type == SHT_NULL) {
+        return;
+    }
+    if (section->header.sh_size == 0) {
+        return;
+    }
+    printf("Writing section\n");
+
+    long current_pos = ftell(file);
+    if (section->header.sh_addralign > 1 && current_pos % section->header.sh_addralign != 0) {
+        long padding = section->header.sh_addralign - (current_pos % section->header.sh_addralign);
+        void *padding_data = calloc(padding, 1);
+        fwrite(padding_data, padding, 1, file);
+        if (ferror(file)) {
+            sysfatal("fwrite", "could not write padding data to file\n");
+        }
+        free(padding_data);
+        current_pos += padding;
     }
 
-    for (int i = 0; i < shnum; i++) {
-        shdrs32[i].sh_name = shdrs64[i].sh_name;
-        shdrs32[i].sh_type = shdrs64[i].sh_type;
-        shdrs32[i].sh_flags = (Elf32_Word)shdrs64[i].sh_flags;
-        shdrs32[i].sh_addr = (Elf32_Addr)shdrs64[i].sh_addr;
-        shdrs32[i].sh_offset = (Elf32_Off)shdrs64[i].sh_offset;
-        shdrs32[i].sh_size = (Elf32_Word)shdrs64[i].sh_size;
-        shdrs32[i].sh_link = shdrs64[i].sh_link;
-        shdrs32[i].sh_info = shdrs64[i].sh_info;
-        shdrs32[i].sh_addralign = (Elf32_Word)shdrs64[i].sh_addralign;
-        shdrs32[i].sh_entsize = (Elf32_Word)shdrs64[i].sh_entsize;
+    section->header.sh_offset = current_pos;
+    fwrite(section->data, section->header.sh_size, 1, file);
+    if (ferror(file)) {
+        sysfatal("fwrite", "could not write section data to file\n");
     }
-
-    return shdrs32;
 }
