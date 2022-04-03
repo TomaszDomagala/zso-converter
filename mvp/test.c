@@ -16,11 +16,11 @@
 	
 // 	return x;
 // }
-extern int bar(int x);
+extern int bar_stub(int x);
 
 int real_main(){
 	int x = 2;
-	x = bar(x);
+	x = bar_stub(x);
 	return x;
 }
 

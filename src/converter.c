@@ -23,34 +23,41 @@ struct section32 {
 Elf32_Ehdr initial_convert_hdr(Elf64_Ehdr ehdr64);
 Elf32_Shdr initial_convert_shdr(Elf64_Shdr shdr64);
 
-struct section32 *find_section32(const char *name, Elf32_Ehdr ehdr32, struct section32 *sections32);
+struct section32 *find_section32(const char *name, Elf32_Ehdr ehdr32, list_t *sections32);
 
 void *load_section64(Elf64_Shdr shdr, FILE *elf64file);
 
-Elf64_Sym *find_symbol_by_name(Elf64_Sym *syms64, Elf64_Half num_syms, const char *name, char *strtab);
+// Elf64_Sym *find_symbol_by_name(Elf64_Sym *syms64, Elf64_Half num_syms, const char *name, char *strtab);
 void write_section32_data(FILE *file, struct section32 *section);
 
-void convert_section32(struct section32 *section, Elf32_Ehdr ehdr32, struct section32 *all_sections);
+void convert_section32(struct section32 *section, Elf32_Ehdr ehdr32, list_t *all_sections);
 
-void create_stubs(Elf32_Ehdr ehdr32, struct section32 *sections);
+// void create_stubs(Elf32_Ehdr ehdr32, list_t *sections);
+
+void create_stubs_test(Elf32_Ehdr ehdr32, list_t *sections);
 
 void convert_elf(Elf64_Ehdr ehdr64, Elf64_Shdr *shdrs64, FILE *elf64file) {
-    struct section32 *sections;
-    sections = malloc(sizeof(struct section32) * ehdr64.e_shnum);
+    // struct section32 *sections;
+    // sections = malloc(sizeof(struct section32) * ehdr64.e_shnum);
+    list_t *sections = list_create(sizeof(struct section32));
 
     for (int i = 0; i < ehdr64.e_shnum; i++) {
+        struct section32 section;
+
         Elf64_Shdr shdr = shdrs64[i];
-        sections[i].header = initial_convert_shdr(shdr);
-        sections[i].data = load_section64(shdr, elf64file);
+        section.header = initial_convert_shdr(shdr);
+        section.data = load_section64(shdr, elf64file);
+        list_add(sections, &section);
     }
 
     Elf32_Ehdr ehdr32 = initial_convert_hdr(ehdr64);
 
-    for (int i = 0; i < ehdr32.e_shnum; i++) {
-        convert_section32(&sections[i], ehdr32, sections);
+    iterate_list(sections, node) {
+        struct section32 *section = list_element(node);
+        convert_section32(section, ehdr32, sections);
     }
 
-    create_stubs(ehdr32, sections);
+    create_stubs_test(ehdr32, sections);
 
     // TODO remove this
     struct section32 *eh_frame = find_section32(".eh_frame", ehdr32, sections);
@@ -67,13 +74,16 @@ void convert_elf(Elf64_Ehdr ehdr64, Elf64_Shdr *shdrs64, FILE *elf64file) {
         sysfatal("fseek", "could not seek to beginning of data\n");
     }
 
-    for (int i = 0; i < ehdr32.e_shnum; i++) {
-        write_section32_data(newfile, &sections[i]);
+    iterate_list(sections, node) {
+        struct section32 *section = list_element(node);
+        write_section32_data(newfile, section);
     }
+
     ehdr32.e_shoff = ftell(newfile);
 
-    for (int i = 0; i < ehdr32.e_shnum; i++) {
-        Elf32_Shdr shdr = sections[i].header;
+    iterate_list(sections, node) {
+        struct section32 *section = list_element(node);
+        Elf32_Shdr shdr = section->header;
         fwrite(&shdr, sizeof(Elf32_Shdr), 1, newfile);
         if (ferror(newfile)) {
             sysfatal("fwrite", "could not write section header to file\n");
@@ -201,7 +211,7 @@ char bar_stub[] = {
     0x89, 0xe5,                    // mov %esp,%ebp
     0x83, 0xec, 0x10,              // sub $0x10,%esp
     0xff, 0x75, 0x08,              // pushl  0x8(%ebp)
-    0xe8, 0x00, 0x00, 0x00, 0x00,  // call   1d <bar+0xa>
+    0xe8, 0xfc, 0xff, 0xff, 0xff,  // call   1d <bar+0xa>
     0x83, 0xc4, 0x04,              // add    $0x4,%esp
     0x8b, 0x55, 0x08,              // mov    0x8(%ebp),%edx
     0x01, 0xd0,                    // add    %edx,%eax
@@ -273,32 +283,111 @@ void text_add(char *code, size_t size, struct section32 *text) {
     text->header.sh_size = new_size;
 }
 
-void rela_add(Elf32_Rela *rela, struct section32 *rela_sec) {
-    Elf32_Word new_size = rela_sec->header.sh_size + sizeof(Elf32_Rela);
-    rela_sec->data = realloc(rela_sec->data, new_size);
-    if (!rela_sec->data) {
+void rel_add(Elf32_Rel *rel, struct section32 *rel_sec) {
+    Elf32_Word new_size = rel_sec->header.sh_size + sizeof(Elf32_Rel);
+    rel_sec->data = realloc(rel_sec->data, new_size);
+    if (!rel_sec->data) {
         sysfatalf("realloc", "could not reallocate %ld bytes\n", new_size);
     }
-    memcpy(rela_sec->data + rela_sec->header.sh_size, rela, sizeof(Elf32_Rela));
-    rela_sec->header.sh_size = new_size;
+    memcpy(rel_sec->data + rel_sec->header.sh_size, rel, sizeof(Elf32_Rel));
+    rel_sec->header.sh_size = new_size;
 }
 
-void create_function_stubs(struct global_func *func, Elf32_Ehdr ehdr32, struct section32 *sections) {
+// void create_function_stubs(struct global_func *func, Elf32_Ehdr ehdr32, struct section32 *sections) {
+//     struct section32 *text = find_section32(".text", ehdr32, sections);
+//     struct section32 *relatext = find_section32(".rela.text", ehdr32, sections);
+//     struct section32 *strtab = find_section32(".strtab", ehdr32, sections);
+//     struct section32 *symtab = find_section32(".symtab", ehdr32, sections);
+
+//     // char *stub_in_name = prefixstr("stub_", strtab->data + func->sym->st_name);
+//     // char *stub_out_name = prefixstr("stub_out_", strtab->data + func->sym->st_name);
+//     // printf("%s\n", stub_in_name);
+//     // printf("%s\n", stub_out_name);
+
+//     char *foo_stub = prefixstr("foo_stub___", strtab->data + func->sym->st_name);
+//     char *bar_stub = prefixstr("bar_stub___", strtab->data + func->sym->st_name);
+
+//     Elf32_Word stub_foo_index = strtab_add(foo_stub, strtab);
+//     Elf32_Word stub_bar_index = strtab_add(bar_stub, strtab);
+
+//     // Elf32_Word stub_out_namendx = strtab_add(stub_out_name, strtab);
+
+//     Elf32_Sym stub_foo_sym = {
+//         .st_name = stub_foo_index,
+//         .st_value = text->header.sh_size,
+//         .st_size = sizeof(foo_stub),
+//         .st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC),
+//         .st_other = STV_DEFAULT,
+//         .st_shndx = func->sym->st_shndx,  // .text section index
+//     };
+
+//     Elf32_Sym stub_bar_sym = {
+//         .st_name = stub_bar_index,
+//         .st_value = text->header.sh_size + sizeof(foo_stub),
+//         .st_size = sizeof(bar_stub),
+//         .st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC),
+//         .st_other = STV_DEFAULT,
+//         .st_shndx = func->sym->st_shndx,  // .text section index
+//     };
+
+//     Elf32_Word stub_foo_sym_index = symtab_add(&stub_foo_sym, symtab);
+//     Elf32_Word stub_bar_sym_index = symtab_add(&stub_bar_sym, symtab);
+
+//     Elf32_Rela foo_rela = {
+//         .r_offset = text->header.sh_size + 0x1d,
+//         .r_info = ELF32_R_INFO(stub_foo_sym_index, R_386_PC32),
+//         .r_addend = -4,
+//     };
+
+//     rela_add(&foo_rela, relatext);
+
+//     text_add(foo_stub, sizeof(foo_stub), text);
+//     text_add(bar_stub, sizeof(bar_stub), text);
+//     // text_add(fun_stub_out, sizeof(fun_stub_out), text);
+// }
+
+// void create_stubs(Elf32_Ehdr ehdr32, list_t *sections) {
+//     struct section32 *symtab = find_section32(".symtab", ehdr32, sections);
+//     struct section32 *strtab = find_section32(".strtab", ehdr32, sections);
+
+//     Elf32_Sym *syms = symtab->data;
+//     // list of global functions
+//     list_t *funcs = list_create(sizeof(struct global_func));
+
+//     Elf32_Word symnum = symtab->header.sh_size / symtab->header.sh_entsize;
+//     for (Elf32_Word i = 0; i < symnum; i++) {
+//         Elf32_Sym *sym = &syms[i];
+
+//         if (ELF32_ST_TYPE(sym->st_info) == STT_FUNC && ELF32_ST_BIND(sym->st_info) == STB_GLOBAL) {
+//             struct global_func func = {
+//                 .sym = sym,
+//                 .sym_index = i,
+//             };
+
+//             list_add(funcs, &func);
+//         }
+//     }
+
+//     iterate_list(funcs, node) {
+//         struct global_func *func = list_element(node);
+
+//         printf("function name: %s\n", (char *)strtab->data + func->sym->st_name);
+//         printf("sym_index: %d\n", func->sym_index);
+
+//         create_function_stubs(func, ehdr32, sections);
+//     }
+
+//     list_free(funcs);
+// }
+
+void create_stubs_test(Elf32_Ehdr ehdr32, list_t *sections) {
     struct section32 *text = find_section32(".text", ehdr32, sections);
-    struct section32 *relatext = find_section32(".rela.text", ehdr32, sections);
+    struct section32 *reltext = find_section32(".rel.text", ehdr32, sections);
     struct section32 *strtab = find_section32(".strtab", ehdr32, sections);
     struct section32 *symtab = find_section32(".symtab", ehdr32, sections);
 
-    // char *stub_in_name = prefixstr("stub_", strtab->data + func->sym->st_name);
-    // char *stub_out_name = prefixstr("stub_out_", strtab->data + func->sym->st_name);
-    // printf("%s\n", stub_in_name);
-    // printf("%s\n", stub_out_name);
-
-    char *foo_stub = prefixstr("foo_stub___", strtab->data + func->sym->st_name);
-    char *bar_stub = prefixstr("bar_stub___", strtab->data + func->sym->st_name);
-
-    Elf32_Word stub_foo_index = strtab_add(foo_stub, strtab);
-    Elf32_Word stub_bar_index = strtab_add(bar_stub, strtab);
+    Elf32_Word stub_foo_index = strtab_add("foo_stub", strtab);
+    Elf32_Word stub_bar_index = strtab_add("bar_stub", strtab);
 
     // Elf32_Word stub_out_namendx = strtab_add(stub_out_name, strtab);
 
@@ -308,7 +397,7 @@ void create_function_stubs(struct global_func *func, Elf32_Ehdr ehdr32, struct s
         .st_size = sizeof(foo_stub),
         .st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC),
         .st_other = STV_DEFAULT,
-        .st_shndx = func->sym->st_shndx,  // .text section index
+        .st_shndx = 1,  // .text section index
     };
 
     Elf32_Sym stub_bar_sym = {
@@ -317,57 +406,22 @@ void create_function_stubs(struct global_func *func, Elf32_Ehdr ehdr32, struct s
         .st_size = sizeof(bar_stub),
         .st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC),
         .st_other = STV_DEFAULT,
-        .st_shndx = func->sym->st_shndx,  // .text section index
+        .st_shndx = 1,  // .text section index
     };
 
     Elf32_Word stub_foo_sym_index = symtab_add(&stub_foo_sym, symtab);
     Elf32_Word stub_bar_sym_index = symtab_add(&stub_bar_sym, symtab);
 
-    Elf32_Rela foo_rela = {
+    Elf32_Rel foo_rel = {
         .r_offset = text->header.sh_size + 0x1d,
         .r_info = ELF32_R_INFO(stub_foo_sym_index, R_386_PC32),
-        .r_addend = -4,
     };
 
-    rela_add(&foo_rela, relatext);
+    rel_add(&foo_rel, reltext);
 
     text_add(foo_stub, sizeof(foo_stub), text);
     text_add(bar_stub, sizeof(bar_stub), text);
     // text_add(fun_stub_out, sizeof(fun_stub_out), text);
-}
-
-void create_stubs(Elf32_Ehdr ehdr32, struct section32 *sections) {
-    struct section32 *symtab = find_section32(".symtab", ehdr32, sections);
-    struct section32 *strtab = find_section32(".strtab", ehdr32, sections);
-
-    Elf32_Sym *syms = symtab->data;
-    // list of global functions
-    list_t *funcs = list_create(sizeof(struct global_func));
-
-    Elf32_Word symnum = symtab->header.sh_size / symtab->header.sh_entsize;
-    for (Elf32_Word i = 0; i < symnum; i++) {
-        Elf32_Sym *sym = &syms[i];
-
-        if (ELF32_ST_TYPE(sym->st_info) == STT_FUNC && ELF32_ST_BIND(sym->st_info) == STB_GLOBAL) {
-            struct global_func func = {
-                .sym = sym,
-                .sym_index = i,
-            };
-
-            list_add(funcs, &func);
-        }
-    }
-
-    iterate_list(funcs, node) {
-        struct global_func *func = list_element(node);
-
-        printf("function name: %s\n", (char *)strtab->data + func->sym->st_name);
-        printf("sym_index: %d\n", func->sym_index);
-
-        create_function_stubs(func, ehdr32, sections);
-    }
-
-    list_free(funcs);
 }
 
 /**
@@ -408,32 +462,120 @@ void convert_symtab_section(struct section32 *section) {
     section->header.sh_size = sizeof(Elf32_Sym) * snum;
 }
 
-/**
- * @brief Check if a section is a RELA table
- *
- * @param shdr section header
- * @return true if section is a RELA table
- * @return false if section is not a RELA table
- */
-bool is_rela_section(Elf32_Shdr shdr) {
-    return shdr.sh_type == SHT_RELA;
+// /**
+//  * @brief Check if a section is a RELA table
+//  *
+//  * @param shdr section header
+//  * @return true if section is a RELA table
+//  * @return false if section is not a RELA table
+//  */
+// bool is_rela_section(Elf32_Shdr shdr) {
+//     return shdr.sh_type == SHT_RELA;
+// }
+
+// /**
+//  * @brief Converts Elf64_Rela to Elf32_Rela and supported relocation types.
+//  * This function expects section to be initiali converted section with untouched data
+//  *
+//  * @param section 32-bit rela section with not yet converted rela data
+//  */
+// void convert_rela_section(struct section32 *section, list_t *all_sections) {
+//     Elf32_Word ranum = section->header.sh_size / sizeof(Elf64_Rela);
+//     Elf32_Rela *relas32 = malloc(sizeof(Elf32_Rela) * ranum);
+
+//     for (Elf32_Word i = 0; i < ranum; i++) {
+//         Elf64_Rela *rela64 = (Elf64_Rela *)(section->data) + i;
+//         Elf32_Rela *rela32 = relas32 + i;
+//         rela32->r_offset = rela64->r_offset;
+//         rela32->r_addend = rela64->r_addend;
+
+//         Elf32_Word sym = ELF64_R_SYM(rela64->r_info);
+//         Elf64_Xword type64 = ELF64_R_TYPE(rela64->r_info);
+//         Elf32_Word type32;
+//         switch (type64) {
+//             case R_X86_64_32:
+//             case R_X86_64_32S:
+//                 type32 = R_386_32;
+//                 break;
+//             case R_X86_64_PC32:
+//             case R_X86_64_PLT32:
+//                 type32 = R_386_PC32;
+//                 break;
+//             default:
+//                 type32 = type64;
+//                 warnf("unsupported relocation type: %d\n", type64);
+//                 break;
+//         }
+//         rela32->r_info = ELF32_R_INFO(sym, type32);
+//     }
+//     free(section->data);
+//     section->data = relas32;
+//     section->header.sh_entsize = sizeof(Elf32_Rela);
+//     section->header.sh_size = sizeof(Elf32_Rela) * ranum;
+// }
+
+struct section32 *find_shstrtab(Elf32_Ehdr ehdr32, list_t *sections32) {
+    struct section32 *shstrtab = NULL;
+    int i = 0;
+
+    iterate_list(sections32, node) {
+        if (i == ehdr32.e_shstrndx) {
+            shstrtab = list_element(node);
+            break;
+        }
+        i++;
+    }
+    if (!shstrtab) {
+        fatal("could not find section header string table\n");
+    }
+    if (shstrtab->header.sh_type != SHT_STRTAB) {
+        fatal("section header string table is not a string table\n");
+    }
+    return shstrtab;
 }
 
-/**
- * @brief Converts Elf64_Rela to Elf32_Rela and supported relocation types.
- * This function expects section to be initiali converted section with untouched data
- *
- * @param section 32-bit rela section with not yet converted rela data
- */
-void convert_rela_section(struct section32 *section) {
-    Elf32_Word ranum = section->header.sh_size / sizeof(Elf64_Rela);
-    Elf32_Rela *relas32 = malloc(sizeof(Elf32_Rela) * ranum);
+void adjust_addend(struct section32 *text, Elf32_Addr r_offset, Elf32_Sword r_addend) {
+    memcpy(text->data + r_offset, &r_addend, sizeof(Elf32_Sword));
+}
 
-    for (Elf32_Word i = 0; i < ranum; i++) {
-        Elf64_Rela *rela64 = (Elf64_Rela *)(section->data) + i;
-        Elf32_Rela *rela32 = relas32 + i;
-        rela32->r_offset = rela64->r_offset;
-        rela32->r_addend = rela64->r_addend;
+bool is_rela_text_section(struct section32 *section, struct section32 *shstrtab) {
+    return strcmp((char *)shstrtab->data + section->header.sh_name, ".rela.text") == 0;
+}
+
+void convert_rela_text(struct section32 *relatext, Elf32_Ehdr ehdr32, list_t *all_sections) {
+    struct section32 *shstrtab = find_shstrtab(ehdr32, all_sections);
+    // replace .rela.text string with .rel.text string
+    // actually, replacing prefix .rela with \0.rel and changing sh_name
+    // is necessary, as .text section can use .rela.text substring as name
+    memset((char *)shstrtab->data + relatext->header.sh_name, 0, strlen(".rela"));
+    memcpy((char *)shstrtab->data + relatext->header.sh_name, "\0.rel", 1 + strlen(".rel"));
+    relatext->header.sh_name++;
+
+    struct section32 *text = find_section32(".text", ehdr32, all_sections);
+
+    Elf32_Word rel_num = relatext->header.sh_size / sizeof(Elf64_Rela);
+    Elf32_Shdr rel_text_shdr;
+
+    rel_text_shdr.sh_name = relatext->header.sh_name;  // now changed to .rel.text
+    rel_text_shdr.sh_type = SHT_REL;
+    rel_text_shdr.sh_flags = relatext->header.sh_flags;
+    rel_text_shdr.sh_addr = relatext->header.sh_addr;
+    rel_text_shdr.sh_offset = relatext->header.sh_offset;
+    rel_text_shdr.sh_size = sizeof(Elf32_Rel) * rel_num;
+    rel_text_shdr.sh_link = relatext->header.sh_link;
+    rel_text_shdr.sh_info = relatext->header.sh_info;
+    rel_text_shdr.sh_addralign = relatext->header.sh_addralign;
+    rel_text_shdr.sh_entsize = sizeof(Elf32_Rel);
+
+    Elf32_Rel *rels = malloc(rel_text_shdr.sh_size);
+    if (!rels) {
+        fatal("could not allocate memory for rel.text section\n");
+    }
+
+    for (Elf32_Word i = 0; i < rel_num; i++) {
+        Elf64_Rela *rela64 = (Elf64_Rela *)(relatext->data) + i;
+        Elf32_Rel *rel32 = rels + i;
+        rel32->r_offset = rela64->r_offset;
 
         Elf32_Word sym = ELF64_R_SYM(rela64->r_info);
         Elf64_Xword type64 = ELF64_R_TYPE(rela64->r_info);
@@ -452,45 +594,50 @@ void convert_rela_section(struct section32 *section) {
                 warnf("unsupported relocation type: %d\n", type64);
                 break;
         }
-        rela32->r_info = ELF32_R_INFO(sym, type32);
+        rel32->r_info = ELF32_R_INFO(sym, type32);
+        adjust_addend(text, rel32->r_offset, rela64->r_addend);
     }
-    free(section->data);
-    section->data = relas32;
-    section->header.sh_entsize = sizeof(Elf32_Rela);
-    section->header.sh_size = sizeof(Elf32_Rela) * ranum;
+    free(relatext->data);
+    relatext->data = rels;
+    relatext->header = rel_text_shdr;
 }
 
-void convert_section32(struct section32 *section, Elf32_Ehdr ehdr32, struct section32 *all_sections) {
-    struct section32 shstrtab = all_sections[ehdr32.e_shstrndx];
+void convert_section32(struct section32 *section, Elf32_Ehdr ehdr32, list_t *all_sections) {
+    struct section32 *shstrtab = find_shstrtab(ehdr32, all_sections);
 
-    char *name = (char *)shstrtab.data + section->header.sh_name;
+    char *name = (char *)shstrtab->data + section->header.sh_name;
 
     if (is_section_symtab(section->header)) {
         printf("converting SYMTAB section: %s\n", name);
         convert_symtab_section(section);
         return;
     }
-    if (is_rela_section(section->header)) {
-        printf("converting RELA section: %s\n", name);
-        convert_rela_section(section);
+    if (is_rela_text_section(section, shstrtab)) {
+        printf("converting .rela.text section: %s\n", name);
+        convert_rela_text(section, ehdr32, all_sections);
         return;
     }
+    // if (is_rela_section(section->header)) {
+    //     printf("converting RELA section: %s\n", name);
+    //     convert_rela_section(section);
+    //     return;
+    // }
 
     printf("section %s not converted\n", name);
 }
 
-struct section32 *find_section32(const char *name, Elf32_Ehdr ehdr32, struct section32 *sections32) {
-    Elf32_Half shnum = ehdr32.e_shnum;
-    struct section32 *shstrtab = sections32 + ehdr32.e_shstrndx;
+struct section32 *find_section32(const char *name, Elf32_Ehdr ehdr32, list_t *sections32) {
+    struct section32 *shstrtab = find_shstrtab(ehdr32, sections32);
     char *section_names = shstrtab->data;
 
-    Elf32_Half index;
+    struct section32 *wanted;
     int found = 0;
 
-    for (Elf32_Half i = 0; i < shnum; i++) {
-        if (strcmp(section_names + sections32[i].header.sh_name, name) == 0) {
+    iterate_list(sections32, node) {
+        struct section32 *section = list_element(node);
+        if (strcmp(section_names + section->header.sh_name, name) == 0) {
             found++;
-            index = i;
+            wanted = section;
         }
     }
 
@@ -500,27 +647,27 @@ struct section32 *find_section32(const char *name, Elf32_Ehdr ehdr32, struct sec
         fatalf("multiple (%d) section headers with name %s\n", found, name);
     }
 
-    return sections32 + index;
+    return wanted;
 }
 
-Elf64_Sym *find_symbol_by_name(Elf64_Sym *syms64, Elf64_Half num_syms, const char *name, char *strtab) {
-    Elf64_Half index;
-    int found = 0;
+// Elf64_Sym *find_symbol_by_name(Elf64_Sym *syms64, Elf64_Half num_syms, const char *name, char *strtab) {
+//     Elf64_Half index;
+//     int found = 0;
 
-    for (Elf64_Half i = 0; i < num_syms; i++) {
-        if (strcmp(strtab + syms64[i].st_name, name) == 0) {
-            found++;
-            index = i;
-        }
-    }
+//     for (Elf64_Half i = 0; i < num_syms; i++) {
+//         if (strcmp(strtab + syms64[i].st_name, name) == 0) {
+//             found++;
+//             index = i;
+//         }
+//     }
 
-    if (found == 0) {
-        fatalf("no symbol with name %s\n", name);
-    } else if (found > 1) {
-        fatalf("multiple (%d) symbols with name %s\n", found, name);
-    }
-    return syms64 + index;
-}
+//     if (found == 0) {
+//         fatalf("no symbol with name %s\n", name);
+//     } else if (found > 1) {
+//         fatalf("multiple (%d) symbols with name %s\n", found, name);
+//     }
+//     return syms64 + index;
+// }
 
 Elf32_Ehdr initial_convert_hdr(Elf64_Ehdr ehdr64) {
     Elf32_Ehdr ehdr32;

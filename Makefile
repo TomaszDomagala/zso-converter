@@ -29,7 +29,7 @@ newelf.o: converter test-64.o
 	./converter test-64.o
 
 mvp.out: newelf.o mvp/test.c
-	gcc -Wl,-v -m32 -g -no-pie -o mvp.out $^
+	gcc -m32 -g -no-pie -o mvp.out $^
 
 .PHONY: clean
 clean:	## Clean up
