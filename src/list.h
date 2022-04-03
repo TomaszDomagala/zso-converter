@@ -29,4 +29,8 @@ list_node_t *list_prev(list_node_t *node);
 
 void list_remove_all(list_t *list);
 
+
+#define iterate_list(list, node) \
+    for (list_node_t *node = list_head(list); node != NULL; node = list_next(node))
+
 #endif //CONVERTER_LIST_H

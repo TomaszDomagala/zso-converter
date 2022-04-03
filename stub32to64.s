@@ -16,9 +16,6 @@ pushl %esi
 # align stack
 subl $4, %esp
 
-# ljmpl *fun_addr
-
-
 # change to 64 mode
 subl $8, %esp
 lea fun_stub_out, %ebx
@@ -43,6 +40,7 @@ lretl
 */
 .code32
 fun_stub_out:
+# argument as return value, dont call actual function yet
 movl 8(%ebp), %eax
 
 addl $4, %esp

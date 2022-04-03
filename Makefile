@@ -3,8 +3,8 @@ all: converter
 ROOT_DIR = $(shell pwd)
 CC=gcc
 CFLAGS= -Wall -Wextra -O2 -I./src
-DEPS = src/prints.h src/fatal.h src/converter.h
-OBJ = main.o prints.o fatal.o converter.o
+DEPS = src/prints.h src/fatal.h src/converter.h src/list.h
+OBJ = main.o prints.o fatal.o converter.o list.o
 
 %.o: src/%.c $(DEPS)
 	@$(CC) -c -o $@ $< $(CFLAGS)
@@ -21,6 +21,9 @@ test-64.o: mvp/test-64.c
 
 test-32.o: mvp/test-64.c
 	gcc -m32 -fno-pic -c mvp/test-64.c -o test-32.o
+
+stub32to64.o:
+	as --32 -o stub32to64.o stub32to64.s
 
 .PHONY: clean
 clean:	## Clean up
