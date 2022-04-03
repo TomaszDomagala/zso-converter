@@ -65,9 +65,3 @@ fun_addr:
 .long fun_stub_out1
 .long 0x23
 */
-
-
-.code32
-test:
-movl $44, %eax
-retl

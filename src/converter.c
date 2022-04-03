@@ -32,9 +32,7 @@ void write_section32_data(FILE *file, struct section32 *section);
 
 void convert_section32(struct section32 *section, Elf32_Ehdr ehdr32, list_t *all_sections);
 
-// void create_stubs(Elf32_Ehdr ehdr32, list_t *sections);
-
-void create_stubs_test(Elf32_Ehdr ehdr32, list_t *sections);
+void create_stubs(Elf32_Ehdr ehdr32, list_t *sections);
 
 void convert_elf(Elf64_Ehdr ehdr64, Elf64_Shdr *shdrs64, FILE *elf64file) {
     // struct section32 *sections;
@@ -57,7 +55,7 @@ void convert_elf(Elf64_Ehdr ehdr64, Elf64_Shdr *shdrs64, FILE *elf64file) {
         convert_section32(section, ehdr32, sections);
     }
 
-    create_stubs_test(ehdr32, sections);
+    create_stubs(ehdr32, sections);
 
     // TODO remove this
     struct section32 *eh_frame = find_section32(".eh_frame", ehdr32, sections);
@@ -137,88 +135,29 @@ Disassembly of section .text:
   27:	5d                   	pop    %ebp
   28:	c3                   	ret
 */
-// char fun_stub[] = {
-//     0x55,                                      // push %ebp
-//     0x89, 0xe5,                                // mov %esp,%ebp
-//     0x53,                                      // push %ebx
-//     0x57,                                      // push %edi
-//     0x56,                                      // push %esi
-//     0x83, 0xec, 0x04,                          // sub $0x4,%esp
-//     0x83, 0xec, 0x08,                          // sub $0x8,%esp
-//     0x8d, 0x1d, 0x00, 0x00, 0x00, 0x00,        // lea 0x1e,%ebx
-//     0xc7, 0x44, 0x24, 0x04, 0x23, 0x00, 0x00,  // movl $0x23,0x4(%esp)
-//     0x00,
-//     0x89, 0x1c, 0x24,  // mov %ebx,(%esp)
-//     0xcb,              // lret
-// };
-
-// char fun_stub_out[] = {
-//     0x8b, 0x45, 0x08,  // mov 0x8(%ebp),%eax
-//     0x83, 0xc4, 0x04,  // add $0x4,%esp
-//     0x5e,              // pop %esi
-//     0x5f,              // pop %edi
-//     0x5b,              // pop %ebx
-//     0x5d,              // pop %ebp
-//     0xc3,              // ret
-// };
-
-/*
-00000029 <test>:
-test-32.o:     file format elf32-i386
-
-
-Disassembly of section .text:
-
-00000000 <foo>:
-   0:	55                   	push   %ebp
-   1:	89 e5                	mov    %esp,%ebp
-   3:	83 ec 10             	sub    $0x10,%esp
-   6:	8b 45 08             	mov    0x8(%ebp),%eax
-   9:	01 c0                	add    %eax,%eax
-   b:	89 45 fc             	mov    %eax,-0x4(%ebp)
-   e:	8b 45 fc             	mov    -0x4(%ebp),%eax
-  11:	c9                   	leave
-  12:	c3                   	ret
-
-00000013 <bar>:
-  13:	55                   	push   %ebp
-  14:	89 e5                	mov    %esp,%ebp
-  16:	83 ec 10             	sub    $0x10,%esp
-  19:	ff 75 08             	pushl  0x8(%ebp)
-  1c:	e8 fc ff ff ff       	call   1d <bar+0xa>
-  21:	83 c4 04             	add    $0x4,%esp
-  24:	8b 55 08             	mov    0x8(%ebp),%edx
-  27:	01 d0                	add    %edx,%eax
-  29:	89 45 fc             	mov    %eax,-0x4(%ebp)
-  2c:	8b 45 fc             	mov    -0x4(%ebp),%eax
-  2f:	c9                   	leave
-  30:	c3                   	ret
-*/
-char foo_stub[] = {
-    0x55,              // push %ebp
-    0x89, 0xe5,        // mov %esp,%ebp
-    0x83, 0xec, 0x10,  // sub $0x10,%esp
-    0x8b, 0x45, 0x08,  // mov 0x8(%ebp),%eax
-    0x01, 0xc0,        // add %eax,%eax
-    0x89, 0x45, 0xfc,  // mov %eax,-0x4(%ebp)
-    0x8b, 0x45, 0xfc,  // mov -0x4(%ebp),%eax
-    0xc9,              // leave
-    0xc3,              // ret
+char fun_stub[] = {
+    0x55,                                      // push %ebp
+    0x89, 0xe5,                                // mov %esp,%ebp
+    0x53,                                      // push %ebx
+    0x57,                                      // push %edi
+    0x56,                                      // push %esi
+    0x83, 0xec, 0x04,                          // sub $0x4,%esp
+    0x83, 0xec, 0x08,                          // sub $0x8,%esp
+    0x8d, 0x1d, 0x1e, 0x00, 0x00, 0x00,        // lea 0x1e,%ebx
+    0xc7, 0x44, 0x24, 0x04, 0x23, 0x00, 0x00,  // movl $0x23,0x4(%esp)
+    0x00,
+    0x89, 0x1c, 0x24,  // mov %ebx,(%esp)
+    0xcb,              // lret
 };
 
-char bar_stub[] = {
-    0x55,                          // push %ebp
-    0x89, 0xe5,                    // mov %esp,%ebp
-    0x83, 0xec, 0x10,              // sub $0x10,%esp
-    0xff, 0x75, 0x08,              // pushl  0x8(%ebp)
-    0xe8, 0xfc, 0xff, 0xff, 0xff,  // call   1d <bar+0xa>
-    0x83, 0xc4, 0x04,              // add    $0x4,%esp
-    0x8b, 0x55, 0x08,              // mov    0x8(%ebp),%edx
-    0x01, 0xd0,                    // add    %edx,%eax
-    0x89, 0x45, 0xfc,              // mov    %eax,-0x4(%ebp)
-    0x8b, 0x45, 0xfc,              // mov    -0x4(%ebp),%eax
-    0xc9,                          // leave
-    0xc3,                          // ret
+char fun_stub_out[] = {
+    0x8b, 0x45, 0x08,  // mov 0x8(%ebp),%eax
+    0x83, 0xc4, 0x04,  // add $0x4,%esp
+    0x5e,              // pop %esi
+    0x5f,              // pop %edi
+    0x5b,              // pop %ebx
+    0x5d,              // pop %ebp
+    0xc3,              // ret
 };
 
 struct global_func {
@@ -293,135 +232,87 @@ void rel_add(Elf32_Rel *rel, struct section32 *rel_sec) {
     rel_sec->header.sh_size = new_size;
 }
 
-// void create_function_stubs(struct global_func *func, Elf32_Ehdr ehdr32, struct section32 *sections) {
-//     struct section32 *text = find_section32(".text", ehdr32, sections);
-//     struct section32 *relatext = find_section32(".rela.text", ehdr32, sections);
-//     struct section32 *strtab = find_section32(".strtab", ehdr32, sections);
-//     struct section32 *symtab = find_section32(".symtab", ehdr32, sections);
-
-//     // char *stub_in_name = prefixstr("stub_", strtab->data + func->sym->st_name);
-//     // char *stub_out_name = prefixstr("stub_out_", strtab->data + func->sym->st_name);
-//     // printf("%s\n", stub_in_name);
-//     // printf("%s\n", stub_out_name);
-
-//     char *foo_stub = prefixstr("foo_stub___", strtab->data + func->sym->st_name);
-//     char *bar_stub = prefixstr("bar_stub___", strtab->data + func->sym->st_name);
-
-//     Elf32_Word stub_foo_index = strtab_add(foo_stub, strtab);
-//     Elf32_Word stub_bar_index = strtab_add(bar_stub, strtab);
-
-//     // Elf32_Word stub_out_namendx = strtab_add(stub_out_name, strtab);
-
-//     Elf32_Sym stub_foo_sym = {
-//         .st_name = stub_foo_index,
-//         .st_value = text->header.sh_size,
-//         .st_size = sizeof(foo_stub),
-//         .st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC),
-//         .st_other = STV_DEFAULT,
-//         .st_shndx = func->sym->st_shndx,  // .text section index
-//     };
-
-//     Elf32_Sym stub_bar_sym = {
-//         .st_name = stub_bar_index,
-//         .st_value = text->header.sh_size + sizeof(foo_stub),
-//         .st_size = sizeof(bar_stub),
-//         .st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC),
-//         .st_other = STV_DEFAULT,
-//         .st_shndx = func->sym->st_shndx,  // .text section index
-//     };
-
-//     Elf32_Word stub_foo_sym_index = symtab_add(&stub_foo_sym, symtab);
-//     Elf32_Word stub_bar_sym_index = symtab_add(&stub_bar_sym, symtab);
-
-//     Elf32_Rela foo_rela = {
-//         .r_offset = text->header.sh_size + 0x1d,
-//         .r_info = ELF32_R_INFO(stub_foo_sym_index, R_386_PC32),
-//         .r_addend = -4,
-//     };
-
-//     rela_add(&foo_rela, relatext);
-
-//     text_add(foo_stub, sizeof(foo_stub), text);
-//     text_add(bar_stub, sizeof(bar_stub), text);
-//     // text_add(fun_stub_out, sizeof(fun_stub_out), text);
-// }
-
-// void create_stubs(Elf32_Ehdr ehdr32, list_t *sections) {
-//     struct section32 *symtab = find_section32(".symtab", ehdr32, sections);
-//     struct section32 *strtab = find_section32(".strtab", ehdr32, sections);
-
-//     Elf32_Sym *syms = symtab->data;
-//     // list of global functions
-//     list_t *funcs = list_create(sizeof(struct global_func));
-
-//     Elf32_Word symnum = symtab->header.sh_size / symtab->header.sh_entsize;
-//     for (Elf32_Word i = 0; i < symnum; i++) {
-//         Elf32_Sym *sym = &syms[i];
-
-//         if (ELF32_ST_TYPE(sym->st_info) == STT_FUNC && ELF32_ST_BIND(sym->st_info) == STB_GLOBAL) {
-//             struct global_func func = {
-//                 .sym = sym,
-//                 .sym_index = i,
-//             };
-
-//             list_add(funcs, &func);
-//         }
-//     }
-
-//     iterate_list(funcs, node) {
-//         struct global_func *func = list_element(node);
-
-//         printf("function name: %s\n", (char *)strtab->data + func->sym->st_name);
-//         printf("sym_index: %d\n", func->sym_index);
-
-//         create_function_stubs(func, ehdr32, sections);
-//     }
-
-//     list_free(funcs);
-// }
-
-void create_stubs_test(Elf32_Ehdr ehdr32, list_t *sections) {
+void create_function_stubs(struct global_func *func, Elf32_Ehdr ehdr32, list_t *sections) {
     struct section32 *text = find_section32(".text", ehdr32, sections);
     struct section32 *reltext = find_section32(".rel.text", ehdr32, sections);
     struct section32 *strtab = find_section32(".strtab", ehdr32, sections);
     struct section32 *symtab = find_section32(".symtab", ehdr32, sections);
 
-    Elf32_Word stub_foo_index = strtab_add("foo_stub", strtab);
-    Elf32_Word stub_bar_index = strtab_add("bar_stub", strtab);
+    char *stub_in_name = prefixstr("stub_", strtab->data + func->sym->st_name);
+    char *stub_out_name = prefixstr("stub_out_", strtab->data + func->sym->st_name);
+
+    Elf32_Word stub_in_name_index = strtab_add(stub_in_name, strtab);
+    Elf32_Word stub_out_name_index = strtab_add(stub_out_name, strtab);
 
     // Elf32_Word stub_out_namendx = strtab_add(stub_out_name, strtab);
 
-    Elf32_Sym stub_foo_sym = {
-        .st_name = stub_foo_index,
+    Elf32_Sym stub_in_sym = {
+        .st_name = stub_in_name_index,
         .st_value = text->header.sh_size,
-        .st_size = sizeof(foo_stub),
+        .st_size = sizeof(fun_stub),
         .st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC),
         .st_other = STV_DEFAULT,
-        .st_shndx = 1,  // .text section index
+        .st_shndx = func->sym->st_shndx,  // .text section index
     };
 
-    Elf32_Sym stub_bar_sym = {
-        .st_name = stub_bar_index,
-        .st_value = text->header.sh_size + sizeof(foo_stub),
-        .st_size = sizeof(bar_stub),
+    Elf32_Sym stub_out_sym = {
+        .st_name = stub_out_name_index,
+        .st_value = text->header.sh_size + sizeof(fun_stub),
+        .st_size = sizeof(fun_stub_out),
         .st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC),
         .st_other = STV_DEFAULT,
-        .st_shndx = 1,  // .text section index
+        .st_shndx = func->sym->st_shndx,  // .text section index
     };
 
-    Elf32_Word stub_foo_sym_index = symtab_add(&stub_foo_sym, symtab);
-    Elf32_Word stub_bar_sym_index = symtab_add(&stub_bar_sym, symtab);
+    symtab_add(&stub_in_sym, symtab);
+    symtab_add(&stub_out_sym, symtab);
 
-    Elf32_Rel foo_rel = {
-        .r_offset = text->header.sh_size + 0x1d,
-        .r_info = ELF32_R_INFO(stub_foo_sym_index, R_386_PC32),
+    Elf32_Rel out_rel = {
+        .r_offset = text->header.sh_size + 0xe,
+        .r_info = ELF32_R_INFO(2, R_386_32),
     };
 
-    rel_add(&foo_rel, reltext);
+    rel_add(&out_rel, reltext);
 
-    text_add(foo_stub, sizeof(foo_stub), text);
-    text_add(bar_stub, sizeof(bar_stub), text);
-    // text_add(fun_stub_out, sizeof(fun_stub_out), text);
+    text_add(fun_stub, sizeof(fun_stub), text);
+    Elf32_Addr lea_addr = text->header.sh_size;
+    memcpy(text->data + text->header.sh_size - sizeof(fun_stub) + 0xe, &lea_addr, sizeof(Elf32_Addr));
+
+    text_add(fun_stub_out, sizeof(fun_stub_out), text);
+}
+
+void create_stubs(Elf32_Ehdr ehdr32, list_t *sections) {
+    struct section32 *symtab = find_section32(".symtab", ehdr32, sections);
+    struct section32 *strtab = find_section32(".strtab", ehdr32, sections);
+
+    Elf32_Sym *syms = symtab->data;
+    // list of global functions
+    list_t *funcs = list_create(sizeof(struct global_func));
+
+    Elf32_Word symnum = symtab->header.sh_size / symtab->header.sh_entsize;
+    for (Elf32_Word i = 0; i < symnum; i++) {
+        Elf32_Sym *sym = &syms[i];
+
+        if (ELF32_ST_TYPE(sym->st_info) == STT_FUNC && ELF32_ST_BIND(sym->st_info) == STB_GLOBAL) {
+            struct global_func func = {
+                .sym = sym,
+                .sym_index = i,
+            };
+
+            list_add(funcs, &func);
+        }
+    }
+
+    iterate_list(funcs, node) {
+        struct global_func *func = list_element(node);
+
+        printf("function name: %s\n", (char *)strtab->data + func->sym->st_name);
+        printf("sym_index: %d\n", func->sym_index);
+
+        create_function_stubs(func, ehdr32, sections);
+    }
+
+    list_free(funcs);
 }
 
 /**
