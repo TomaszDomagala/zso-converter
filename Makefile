@@ -22,8 +22,14 @@ test-64.o: mvp/test-64.c
 test-32.o: mvp/test-64.c
 	gcc -m32 -fno-pic -c mvp/test-64.c -o test-32.o
 
-stub32to64.o:
+stub32to64.o: stub32to64.s
 	as --32 -o stub32to64.o stub32to64.s
+
+newelf.o: converter test-64.o
+	./converter test-64.o
+
+mvp.out: newelf.o mvp/test.c
+	gcc -Wl,-v -m32 -g -no-pie -o mvp.out $^
 
 .PHONY: clean
 clean:	## Clean up
