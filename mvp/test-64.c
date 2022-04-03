@@ -6,6 +6,7 @@ int foo(int x) {
 }
 
 int bar(int x) {
-	int z = x * 3;
+	int z = foo(x) + x;
+
 	return z;
 }

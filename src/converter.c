@@ -22,8 +22,6 @@ struct section32 {
 
 Elf32_Ehdr initial_convert_hdr(Elf64_Ehdr ehdr64);
 Elf32_Shdr initial_convert_shdr(Elf64_Shdr shdr64);
-// Elf64_Shdr find_shdr64(Elf64_Shdr *shdrs64, Elf64_Half shnum, Elf64_Word sh_type);
-// Elf64_Shdr find_shdr64_by_name(Elf64_Shdr *shdrs64, Elf64_Half shnum, const char *name, char *shstrtab);
 
 struct section32 *find_section32(const char *name, Elf32_Ehdr ehdr32, struct section32 *sections32);
 
@@ -123,41 +121,179 @@ Disassembly of section .text:
   27:	5d                   	pop    %ebp
   28:	c3                   	ret
 */
-const unsigned char fun_stub[] = {
-    0x55,                       // push %ebp
-    0x89, 0xe5,                 // mov %esp,%ebp
-    0x53,                       // push %ebx
-    0x57,                       // push %edi
-    0x56,                       // push %esi
-    0x83, 0xec, 0x04,           // sub $0x4,%esp
-    0x83, 0xec, 0x08,           // sub $0x8,%esp
-    0x8d, 0x1d, 0x1e, 0x00, 0x00, 0x00, // lea 0x1e,%ebx
-    0xc7, 0x44, 0x24, 0x04, 0x23, 0x00, 0x00, 0x00, // movl $0x23,0x4(%esp)
+char fun_stub[] = {
+    0x55,                                      // push %ebp
+    0x89, 0xe5,                                // mov %esp,%ebp
+    0x53,                                      // push %ebx
+    0x57,                                      // push %edi
+    0x56,                                      // push %esi
+    0x83, 0xec, 0x04,                          // sub $0x4,%esp
+    0x83, 0xec, 0x08,                          // sub $0x8,%esp
+    0x8d, 0x1d, 0x00, 0x00, 0x00, 0x00,        // lea 0x1e,%ebx
+    0xc7, 0x44, 0x24, 0x04, 0x23, 0x00, 0x00,  // movl $0x23,0x4(%esp)
     0x00,
-    0x89, 0x1c, 0x24,           // mov %ebx,(%esp)
-    0xcb,                       // lret
+    0x89, 0x1c, 0x24,  // mov %ebx,(%esp)
+    0xcb,              // lret
 };
+
+char fun_stub_out[] = {
+    0x8b, 0x45, 0x08,  // mov 0x8(%ebp),%eax
+    0x83, 0xc4, 0x04,  // add $0x4,%esp
+    0x5e,              // pop %esi
+    0x5f,              // pop %edi
+    0x5b,              // pop %ebx
+    0x5d,              // pop %ebp
+    0xc3,              // ret
+};
+
+struct global_func {
+    Elf32_Sym *sym;
+    Elf32_Word sym_index;
+};
+
+char *prefixstr(const char *prefix, char *str) {
+    char *newstr = malloc(strlen(prefix) + strlen(str) + 1);
+    strcpy(newstr, prefix);
+    strcat(newstr, str);
+    return newstr;
+}
+
+/**
+ * @brief Adds string to the strtab section.
+ *
+ * @param str string to add
+ * @param strtab section to add string to
+ * @return Elf32_Word index of string in strtab
+ */
+Elf32_Word strtab_add(char *str, struct section32 *strtab) {
+    Elf32_Word new_size = strtab->header.sh_size + strlen(str) + 1;
+    strtab->data = realloc(strtab->data, new_size);
+    if (!strtab->data) {
+        sysfatalf("realloc", "could not reallocate %ld bytes\n", new_size);
+    }
+    Elf32_Word index = strtab->header.sh_size;
+
+    strcpy((char *)strtab->data + index, str);
+    strtab->header.sh_size = new_size;
+
+    return index;
+}
+
+/**
+ * @brief Adds symbol to the symtab section.
+ *
+ * @param sym symbol to add
+ * @param symtab section to add symbol to
+ * @return Elf32_Word index of symbol in symtab
+ */
+Elf32_Word symtab_add(Elf32_Sym *sym, struct section32 *symtab) {
+    Elf32_Word new_size = symtab->header.sh_size + sizeof(Elf32_Sym);
+    symtab->data = realloc(symtab->data, new_size);
+    if (!symtab->data) {
+        sysfatalf("realloc", "could not reallocate %ld bytes\n", new_size);
+    }
+    memcpy(symtab->data + symtab->header.sh_size, sym, sizeof(Elf32_Sym));
+    symtab->header.sh_size = new_size;
+
+    return symtab->header.sh_size / sizeof(Elf32_Sym) - 1;
+}
+
+void text_add(char *code, size_t size, struct section32 *text) {
+    Elf32_Word new_size = text->header.sh_size + size;
+    text->data = realloc(text->data, new_size);
+    if (!text->data) {
+        sysfatalf("realloc", "could not reallocate %ld bytes\n", new_size);
+    }
+    memcpy(text->data + text->header.sh_size, code, size);
+    text->header.sh_size = new_size;
+}
+
+void rela_add(Elf32_Rela *rela, struct section32 *rela_sec) {
+    Elf32_Word new_size = rela_sec->header.sh_size + sizeof(Elf32_Rela);
+    rela_sec->data = realloc(rela_sec->data, new_size);
+    if (!rela_sec->data) {
+        sysfatalf("realloc", "could not reallocate %ld bytes\n", new_size);
+    }
+    memcpy(rela_sec->data + rela_sec->header.sh_size, rela, sizeof(Elf32_Rela));
+    rela_sec->header.sh_size = new_size;
+}
+
+void create_function_stubs(struct global_func *func, Elf32_Ehdr ehdr32, struct section32 *sections) {
+    struct section32 *text = find_section32(".text", ehdr32, sections);
+    struct section32 *relatext = find_section32(".rela.text", ehdr32, sections);
+    struct section32 *strtab = find_section32(".strtab", ehdr32, sections);
+    struct section32 *symtab = find_section32(".symtab", ehdr32, sections);
+
+    char *stub_in_name = prefixstr("stub_", strtab->data + func->sym->st_name);
+    char *stub_out_name = prefixstr("stub_out_", strtab->data + func->sym->st_name);
+    printf("%s\n", stub_in_name);
+    printf("%s\n", stub_out_name);
+
+    Elf32_Word stub_in_namendx = strtab_add(stub_in_name, strtab);
+    Elf32_Word stub_out_namendx = strtab_add(stub_out_name, strtab);
+
+    Elf32_Sym stub_in_sym = {
+        .st_name = stub_in_namendx,
+        .st_value = text->header.sh_size,
+        .st_size = sizeof(fun_stub),
+        .st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC),
+        .st_other = STV_DEFAULT,
+        .st_shndx = func->sym->st_shndx,
+    };
+
+    Elf32_Sym stub_out_sym = {
+        .st_name = stub_out_namendx,
+        .st_value = text->header.sh_size + sizeof(fun_stub),
+        .st_size = sizeof(fun_stub_out),
+        .st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC),
+        .st_other = STV_DEFAULT,
+        .st_shndx = func->sym->st_shndx,
+    };
+
+    symtab_add(&stub_in_sym, symtab);
+    Elf32_Word stub_out_sym_index = symtab_add(&stub_out_sym, symtab);
+
+    Elf32_Rela stub_out_rela = {
+        .r_offset = text->header.sh_size + 0x1e,
+        .r_info = ELF32_R_INFO(stub_out_sym_index, R_386_32),
+        .r_addend = 0,  // maybe -4?
+    };
+
+    rela_add(&stub_out_rela, relatext);
+
+    text_add(fun_stub, sizeof(fun_stub), text);
+    text_add(fun_stub_out, sizeof(fun_stub_out), text);
+}
+
 void create_stubs(Elf32_Ehdr ehdr32, struct section32 *sections) {
     struct section32 *symtab = find_section32(".symtab", ehdr32, sections);
     struct section32 *strtab = find_section32(".strtab", ehdr32, sections);
-    char* strings = strtab->data;
 
     Elf32_Sym *syms = symtab->data;
     // list of global functions
-    list_t *funcs = list_create(sizeof(Elf32_Sym *));
+    list_t *funcs = list_create(sizeof(struct global_func));
 
     Elf32_Word symnum = symtab->header.sh_size / symtab->header.sh_entsize;
     for (Elf32_Word i = 0; i < symnum; i++) {
         Elf32_Sym *sym = &syms[i];
 
         if (ELF32_ST_TYPE(sym->st_info) == STT_FUNC && ELF32_ST_BIND(sym->st_info) == STB_GLOBAL) {
-            list_add(funcs, sym);
+            struct global_func func = {
+                .sym = sym,
+                .sym_index = i,
+            };
+
+            list_add(funcs, &func);
         }
     }
 
-    iterate_list(funcs, node){
-        Elf32_Sym *sym = list_element(node);
-        printf("function name: %s\n", strings + sym->st_name);
+    iterate_list(funcs, node) {
+        struct global_func *func = list_element(node);
+
+        printf("function name: %s\n", (char *)strtab->data + func->sym->st_name);
+        printf("sym_index: %d\n", func->sym_index);
+
+        create_function_stubs(func, ehdr32, sections);
     }
 
     list_free(funcs);
@@ -271,52 +407,6 @@ void convert_section32(struct section32 *section, Elf32_Ehdr ehdr32, struct sect
 
     printf("section %s not converted\n", name);
 }
-
-// /**
-//  * @brief Finds the section header with the given type.
-//  * Fails if there is no such section header, or if there are multiple section headers with the given type.
-//  *
-//  * @param shdrs64 The section header table.
-//  * @param shnum The number of section headers in the table.
-//  * @param sh_type The type of section header to find.
-//  * @return Elf64_Shdr The section header with the given type.
-//  */
-// Elf64_Shdr find_shdr64(Elf64_Shdr *shdrs64, Elf64_Half shnum, Elf64_Word sh_type) {
-//     Elf64_Half index;
-//     int found = 0;
-
-//     for (Elf64_Half i = 0; i < shnum; i++) {
-//         if (shdrs64[i].sh_type == sh_type) {
-//             found++;
-//             index = i;
-//         }
-//     }
-//     if (found == 0) {
-//         fatalf("no section header with type %d\n", sh_type);
-//     } else if (found > 1) {
-//         fatalf("multiple (%d) section headers with type %d\n", found, sh_type);
-//     }
-//     return shdrs64[index];
-// }
-
-// Elf64_Shdr find_shdr64_by_name(Elf64_Shdr *shdrs64, Elf64_Half shnum, const char *name, char *shstrtab) {
-//     Elf64_Half index;
-//     int found = 0;
-
-//     for (Elf64_Half i = 0; i < shnum; i++) {
-//         if (strcmp(shstrtab + shdrs64[i].sh_name, name) == 0) {
-//             found++;
-//             index = i;
-//         }
-//     }
-
-//     if (found == 0) {
-//         fatalf("no section header with name %s\n", name);
-//     } else if (found > 1) {
-//         fatalf("multiple (%d) section headers with name %s\n", found, name);
-//     }
-//     return shdrs64[index];
-// }
 
 struct section32 *find_section32(const char *name, Elf32_Ehdr ehdr32, struct section32 *sections32) {
     Elf32_Half shnum = ehdr32.e_shnum;
