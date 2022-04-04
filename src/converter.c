@@ -351,8 +351,15 @@ void create_function_stubs(struct global_func *func, Elf32_Ehdr ehdr32, list_t *
     struct section32 *strtab = find_section32(".strtab", ehdr32, sections);
     struct section32 *symtab = find_section32(".symtab", ehdr32, sections);
 
+    Elf32_Word func_name = func->sym->st_name;
     Elf32_Word stub_start = text->header.sh_size;
     size_t stub_size = 0;
+    
+    // swap original name with stub name
+    char *name = prefixstr("__stub__", strtab->data + func->sym->st_name);
+    Elf32_Word name_index = strtab_add(name, strtab);
+    func->sym->st_name = name_index;
+    printf("dupa: %s\n", (char*)strtab->data + func->sym->st_name);
 
     stub_size += build_stub_entry(ehdr32, sections);
     stub_size += build_jump_32_to_64(ehdr32, sections);
@@ -360,11 +367,9 @@ void create_function_stubs(struct global_func *func, Elf32_Ehdr ehdr32, list_t *
     stub_size += build_change_64_to_32(ehdr32, sections);
     stub_size += build_stub_exit(ehdr32, sections);
 
-    char *name = prefixstr("stub_", strtab->data + func->sym->st_name);
-    Elf32_Word name_index = strtab_add(name, strtab);
 
     Elf32_Sym entry_sym = {
-        .st_name = name_index,
+        .st_name = func_name,
         .st_value = stub_start,
         .st_size = stub_size,
         .st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC),
@@ -377,15 +382,11 @@ void create_function_stubs(struct global_func *func, Elf32_Ehdr ehdr32, list_t *
 
 void create_stubs(Elf32_Ehdr ehdr32, list_t *sections) {
     struct section32 *symtab = find_section32(".symtab", ehdr32, sections);
-    struct section32 *strtab = find_section32(".strtab", ehdr32, sections);
-
-    Elf32_Sym *syms = symtab->data;
-    // list of global functions
-    list_t *funcs = list_create(sizeof(struct global_func));
 
     Elf32_Word symnum = symtab->header.sh_size / symtab->header.sh_entsize;
     for (Elf32_Word i = 0; i < symnum; i++) {
-        Elf32_Sym *sym = &syms[i];
+        // Get data pointer each time, as add_sym can realloc.
+        Elf32_Sym *sym = (Elf32_Sym*)symtab->data + i;
 
         if (ELF32_ST_TYPE(sym->st_info) == STT_FUNC && ELF32_ST_BIND(sym->st_info) == STB_GLOBAL) {
             struct global_func func = {
@@ -393,20 +394,9 @@ void create_stubs(Elf32_Ehdr ehdr32, list_t *sections) {
                 .sym_index = i,
             };
 
-            list_add(funcs, &func);
+            create_function_stubs(&func, ehdr32, sections);
         }
     }
-
-    iterate_list(funcs, node) {
-        struct global_func *func = list_element(node);
-
-        printf("function name: %s\n", (char *)strtab->data + func->sym->st_name);
-        printf("sym_index: %d\n", func->sym_index);
-
-        create_function_stubs(func, ehdr32, sections);
-    }
-
-    list_free(funcs);
 }
 
 /**
