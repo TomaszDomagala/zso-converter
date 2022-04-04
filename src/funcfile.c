@@ -65,6 +65,14 @@ list_t* parse_funcs(char* lines) {
         }
 
         if (func.f_name != NULL) {
+            if(func.f_ret_type == f_notype) {
+                fatalf("no return type for function %s\n", func.f_name);
+            }
+            for (int i = 0; i < func.f_args_count; i++) {
+                if (func.f_args_types[i] == f_void) {
+                    fatalf("argument %d of function %s is void\n", i, func.f_name);
+                }
+            }
             list_add(funcs, &func);
         }
     }
