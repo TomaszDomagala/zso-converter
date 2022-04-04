@@ -16,11 +16,11 @@
 	
 // 	return x;
 // }
-extern int stub_entry_foo(int x);
+extern int stub_bar(int x);
 
 int real_main(){
-	int x = 4444;
-	x = stub_entry_foo(x);
+	int x = 1000;
+	x = stub_bar(x);
 	return x;
 }
 

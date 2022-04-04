@@ -161,7 +161,15 @@ Elf32_Word symtab_add(Elf32_Sym *sym, struct section32 *symtab) {
     return symtab->header.sh_size / sizeof(Elf32_Sym) - 1;
 }
 
-void text_add(char *code, size_t size, struct section32 *text) {
+/**
+ * @brief Writes code to the end of the text section.
+ *
+ * @param code code to write
+ * @param size size of code
+ * @param text section to write code to
+ * @return size_t number of bytes written
+ */
+size_t text_add(char *code, size_t size, struct section32 *text) {
     Elf32_Word new_size = text->header.sh_size + size;
     text->data = realloc(text->data, new_size);
     if (!text->data) {
@@ -169,6 +177,7 @@ void text_add(char *code, size_t size, struct section32 *text) {
     }
     memcpy(text->data + text->header.sh_size, code, size);
     text->header.sh_size = new_size;
+    return size;
 }
 
 void rel_add(Elf32_Rel *rel, struct section32 *rel_sec) {
@@ -217,45 +226,6 @@ char change_32_to_64_code[] = {
     0xcb,                                            // lret
 };
 
-void build_stub_entry(struct global_func *func, Elf32_Ehdr ehdr32, list_t *sections) {
-    struct section32 *text = find_section32(".text", ehdr32, sections);
-    struct section32 *strtab = find_section32(".strtab", ehdr32, sections);
-    struct section32 *symtab = find_section32(".symtab", ehdr32, sections);
-
-    char *name = prefixstr("stub_entry_", strtab->data + func->sym->st_name);
-    Elf32_Word name_index = strtab_add(name, strtab);
-
-    Elf32_Sym entry_sym = {
-        .st_name = name_index,
-        .st_value = text->header.sh_size,
-        .st_size = sizeof(stub_entry_code) + sizeof(change_32_to_64_code),
-        .st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC),
-        .st_other = STV_DEFAULT,
-        .st_shndx = func->sym->st_shndx,  // .text section index
-    };
-
-    symtab_add(&entry_sym, symtab);
-    text_add(stub_entry_code, sizeof(stub_entry_code), text);
-}
-
-void build_jump_32_to_64(struct global_func *func, Elf32_Ehdr ehdr32, list_t *sections) {
-    struct section32 *text = find_section32(".text", ehdr32, sections);
-    struct section32 *reltext = find_section32(".rel.text", ehdr32, sections);
-
-    // look at char change_32_to_64_code[]
-    Elf32_Addr r_offset = text->header.sh_size + 2;
-    Elf32_Addr lea_target = text->header.sh_size + sizeof(change_32_to_64_code);
-
-    Elf32_Rel lea_rel = {
-        .r_offset = r_offset,
-        .r_info = ELF32_R_INFO(2, R_386_32),  // FIXME: this is hardcoded for now, 2 is .text section symbol
-    };
-    rel_add(&lea_rel, reltext);
-
-    text_add(change_32_to_64_code, sizeof(change_32_to_64_code), text);
-    memcpy(text->data + r_offset, &lea_target, sizeof(lea_target));
-}
-
 /*
 This is 64-bit code.
 
@@ -277,9 +247,9 @@ This is 64-bit code.
   2b:	8d 1c 25 00 00 00 00 	lea    0x0,%ebx
   32:	83 ec 08             	sub    $0x8,%esp
   35:	c7 44 24 04 23 00 00 	movl   $0x23,0x4(%rsp)
-  3c:	00 
+  3c:	00
   3d:	89 1c 24             	mov    %ebx,(%rsp)
-  40:	cb                   	lret   
+  40:	cb                   	lret
 */
 char change_64_to_32_code[] = {
     0x8d, 0x1c, 0x25, 0x00, 0x00, 0x00, 0x00,        // lea 0x0,%ebx
@@ -288,57 +258,6 @@ char change_64_to_32_code[] = {
     0x89, 0x1c, 0x24,                                // mov %ebx,(%rsp)
     0xcb,                                            // lret
 };
-
-void build_func64_caller(struct global_func *func, Elf32_Ehdr ehdr32, list_t *sections) {
-    struct section32 *text = find_section32(".text", ehdr32, sections);
-    struct section32 *reltext = find_section32(".rel.text", ehdr32, sections);
-    struct section32 *strtab = find_section32(".strtab", ehdr32, sections);
-    struct section32 *symtab = find_section32(".symtab", ehdr32, sections);
-
-    char *name = prefixstr("func_caller_", strtab->data + func->sym->st_name);
-    Elf32_Word name_index = strtab_add(name, strtab);
-
-    Elf32_Sym caller_sym = {
-        .st_name = name_index,
-        .st_value = text->header.sh_size,
-        .st_size = sizeof(func64_caller_code) + sizeof(change_64_to_32_code),
-        .st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC),
-        .st_other = STV_DEFAULT,
-        .st_shndx = func->sym->st_shndx,  // .text section index
-    };
-    symtab_add(&caller_sym, symtab);
-
-    // look at char func64_caller_code[]
-    Elf32_Addr r_offset = text->header.sh_size + 5;
-    Elf32_Sword addend = -4;
-
-    Elf32_Rel func_rel = {
-        .r_offset = r_offset,
-        .r_info = ELF32_R_INFO(func->sym_index, R_386_PC32),
-    };
-
-    rel_add(&func_rel, reltext);
-    text_add(func64_caller_code, sizeof(func64_caller_code), text);
-    memcpy(text->data + r_offset, &addend, sizeof(addend));
-}
-
-void build_change_64_to_32(struct global_func *func, Elf32_Ehdr ehdr32, list_t *sections) {
-    struct section32 *text = find_section32(".text", ehdr32, sections);
-    struct section32 *reltext = find_section32(".rel.text", ehdr32, sections);
-
-    // look at char change_64_to_32_code[]
-    Elf32_Addr r_offset = text->header.sh_size + 3;
-    Elf32_Addr lea_target = text->header.sh_size + sizeof(change_64_to_32_code);
-
-    Elf32_Rel lea_rel = {
-        .r_offset = r_offset,
-        .r_info = ELF32_R_INFO(2, R_386_32),  // FIXME: this is hardcoded for now, 2 is .text section symbol
-    };
-
-    rel_add(&lea_rel, reltext);
-    text_add(change_64_to_32_code, sizeof(change_64_to_32_code), text);
-    memcpy(text->data + r_offset, &lea_target, sizeof(lea_target));
-}
 
 /*
 This is 32-bit code.
@@ -357,186 +276,103 @@ char stub_exit_code[] = {
     0xc3,  // ret
 };
 
-void build_stub_exit(struct global_func *func, Elf32_Ehdr ehdr32, list_t *sections) {
+size_t build_stub_entry(Elf32_Ehdr ehdr32, list_t *sections) {
+    struct section32 *text = find_section32(".text", ehdr32, sections);
+    return text_add(stub_entry_code, sizeof(stub_entry_code), text);
+}
+
+size_t build_jump_32_to_64(Elf32_Ehdr ehdr32, list_t *sections) {
+    struct section32 *text = find_section32(".text", ehdr32, sections);
+    struct section32 *reltext = find_section32(".rel.text", ehdr32, sections);
+
+    // look at char change_32_to_64_code[]
+    Elf32_Addr r_offset = text->header.sh_size + 2;
+    Elf32_Addr lea_target = text->header.sh_size + sizeof(change_32_to_64_code);
+
+    Elf32_Rel lea_rel = {
+        .r_offset = r_offset,
+        .r_info = ELF32_R_INFO(2, R_386_32),  // FIXME: this is hardcoded for now, 2 is .text section symbol
+    };
+    rel_add(&lea_rel, reltext);
+
+    size_t w = text_add(change_32_to_64_code, sizeof(change_32_to_64_code), text);
+    memcpy(text->data + r_offset, &lea_target, sizeof(lea_target));
+
+    return w;
+}
+
+size_t build_func64_caller(struct global_func *func, Elf32_Ehdr ehdr32, list_t *sections) {
+    struct section32 *text = find_section32(".text", ehdr32, sections);
+    struct section32 *reltext = find_section32(".rel.text", ehdr32, sections);
+
+    // look at char func64_caller_code[]
+    Elf32_Addr r_offset = text->header.sh_size + 5;
+    Elf32_Sword addend = -4;
+
+    Elf32_Rel func_rel = {
+        .r_offset = r_offset,
+        .r_info = ELF32_R_INFO(func->sym_index, R_386_PC32),
+    };
+
+    rel_add(&func_rel, reltext);
+    size_t w = text_add(func64_caller_code, sizeof(func64_caller_code), text);
+    memcpy(text->data + r_offset, &addend, sizeof(addend));
+
+    return w;
+}
+
+size_t build_change_64_to_32(Elf32_Ehdr ehdr32, list_t *sections) {
+    struct section32 *text = find_section32(".text", ehdr32, sections);
+    struct section32 *reltext = find_section32(".rel.text", ehdr32, sections);
+
+    // look at char change_64_to_32_code[]
+    Elf32_Addr r_offset = text->header.sh_size + 3;
+    Elf32_Addr lea_target = text->header.sh_size + sizeof(change_64_to_32_code);
+
+    Elf32_Rel lea_rel = {
+        .r_offset = r_offset,
+        .r_info = ELF32_R_INFO(2, R_386_32),  // FIXME: this is hardcoded for now, 2 is .text section symbol
+    };
+
+    rel_add(&lea_rel, reltext);
+    size_t w = text_add(change_64_to_32_code, sizeof(change_64_to_32_code), text);
+    memcpy(text->data + r_offset, &lea_target, sizeof(lea_target));
+
+    return w;
+}
+
+size_t build_stub_exit(Elf32_Ehdr ehdr32, list_t *sections) {
+    struct section32 *text = find_section32(".text", ehdr32, sections);
+    return text_add(stub_exit_code, sizeof(stub_exit_code), text);
+}
+
+void create_function_stubs(struct global_func *func, Elf32_Ehdr ehdr32, list_t *sections) {
     struct section32 *text = find_section32(".text", ehdr32, sections);
     struct section32 *strtab = find_section32(".strtab", ehdr32, sections);
     struct section32 *symtab = find_section32(".symtab", ehdr32, sections);
 
-    char *name = prefixstr("stub_exit_", strtab->data + func->sym->st_name);
+    Elf32_Word stub_start = text->header.sh_size;
+    size_t stub_size = 0;
+
+    stub_size += build_stub_entry(ehdr32, sections);
+    stub_size += build_jump_32_to_64(ehdr32, sections);
+    stub_size += build_func64_caller(func, ehdr32, sections);
+    stub_size += build_change_64_to_32(ehdr32, sections);
+    stub_size += build_stub_exit(ehdr32, sections);
+
+    char *name = prefixstr("stub_", strtab->data + func->sym->st_name);
     Elf32_Word name_index = strtab_add(name, strtab);
 
-    Elf32_Sym stub_exit_sym = {
+    Elf32_Sym entry_sym = {
         .st_name = name_index,
-        .st_value = text->header.sh_size,
-        .st_size = sizeof(stub_exit_code),
+        .st_value = stub_start,
+        .st_size = stub_size,
         .st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC),
         .st_other = STV_DEFAULT,
         .st_shndx = func->sym->st_shndx,  // .text section index
     };
-    symtab_add(&stub_exit_sym, symtab);
-    text_add(stub_exit_code, sizeof(stub_exit_code), text);
-}
 
-void create_function_stubs(struct global_func *func, Elf32_Ehdr ehdr32, list_t *sections) {
-    build_stub_entry(func, ehdr32, sections);
-    build_jump_32_to_64(func, ehdr32, sections);
-    build_func64_caller(func, ehdr32, sections);
-    build_change_64_to_32(func, ehdr32, sections);
-    build_stub_exit(func, ehdr32, sections);
-
-    // struct section32 *text = find_section32(".text", ehdr32, sections);
-    // struct section32 *reltext = find_section32(".rel.text", ehdr32, sections);
-    // struct section32 *strtab = find_section32(".strtab", ehdr32, sections);
-    // struct section32 *symtab = find_section32(".symtab", ehdr32, sections);
-
-    // char *stub_in_name = prefixstr("stub_", strtab->data + func->sym->st_name);
-    // char *stub_out_name = prefixstr("stub_out_", strtab->data + func->sym->st_name);
-
-    // Elf32_Word stub_in_name_index = strtab_add(stub_in_name, strtab);
-    // Elf32_Word stub_out_name_index = strtab_add(stub_out_name, strtab);
-
-    // char *stub_caller_name = prefixstr("stub_caller_", strtab->data + func->sym->st_name);
-    // Elf32_Word stub_caller_index = strtab_add(stub_caller_name, strtab);
-
-    // Elf32_Sym stub_in_sym = {
-    //     .st_name = stub_in_name_index,
-    //     .st_value = text->header.sh_size,
-    //     .st_size = sizeof(fun_stub),
-    //     .st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC),
-    //     .st_other = STV_DEFAULT,
-    //     .st_shndx = func->sym->st_shndx,  // .text section index
-    // };
-
-    // Elf32_Sym stub_caller_sym = {
-    //     .st_name = stub_caller_index,
-    //     .st_value = text->header.sh_size + sizeof(fun_stub),
-    //     .st_size = sizeof(fun_stub_64),
-    //     .st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC),
-    //     .st_other = STV_DEFAULT,
-    //     .st_shndx = func->sym->st_shndx,  // .text section index
-    // };
-
-    // Elf32_Sym stub_out_sym = {
-    //     .st_name = stub_out_name_index,
-    //     .st_value = text->header.sh_size + sizeof(fun_stub) + sizeof(fun_stub_64),
-    //     .st_size = sizeof(fun_stub_out),
-    //     .st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC),
-    //     .st_other = STV_DEFAULT,
-    //     .st_shndx = func->sym->st_shndx,  // .text section index
-    // };
-
-    // symtab_add(&stub_in_sym, symtab);
-    // symtab_add(&stub_caller_sym, symtab);
-    // symtab_add(&stub_out_sym, symtab);
-
-    // Elf32_Rel caller_rel = {
-    //     .r_offset = text->header.sh_size + 0xe,
-    //     .r_info = ELF32_R_INFO(2, R_386_32),
-    // };
-
-    // rel_add(&caller_rel, reltext);
-
-    // text_add(fun_stub, sizeof(fun_stub), text);
-    // Elf32_Addr lea_addr = text->header.sh_size;
-    // memcpy(text->data + text->header.sh_size - sizeof(fun_stub) + 0xe, &lea_addr, sizeof(Elf32_Addr));
-
-    // Elf32_Rel original_func_rel = {
-    //     .r_offset = text->header.sh_size + 0x5,
-    //     .r_info = ELF32_R_INFO(func->sym_index, R_386_PC32),
-    // };
-    // Elf32_Rel out_rel = {
-    //     .r_offset = text->header.sh_size + 19,
-    //     .r_info = ELF32_R_INFO(2, R_386_32),  // TODO: this is hardcoded, 2 is symbol related to .text
-    // };
-
-    // rel_add(&original_func_rel, reltext);
-    // rel_add(&out_rel, reltext);
-
-    // text_add(fun_stub_64, sizeof(fun_stub_64), text);
-    // Elf32_Sword addend = -4;
-    // memcpy(text->data + text->header.sh_size - sizeof(fun_stub_64) + 0x5, &addend, sizeof(Elf32_Sword));
-    // Elf32_Addr lea_addr_64 = text->header.sh_size;
-    // memcpy(text->data + text->header.sh_size - sizeof(fun_stub_64) + 19, &lea_addr_64, sizeof(Elf32_Addr));
-
-    // text_add(fun_stub_out, sizeof(fun_stub_out), text);
-
-    // return;
-    // struct section32 *text = find_section32(".text", ehdr32, sections);
-    // struct section32 *reltext = find_section32(".rel.text", ehdr32, sections);
-    // struct section32 *strtab = find_section32(".strtab", ehdr32, sections);
-    // struct section32 *symtab = find_section32(".symtab", ehdr32, sections);
-
-    // char *stub_in_name = prefixstr("stub_", strtab->data + func->sym->st_name);
-    // // char *stub_caller = prefixstr("caller_", strtab->data + func->sym->st_name);
-    // char *stub_out_name = prefixstr("stub_out_", strtab->data + func->sym->st_name);
-
-    // Elf32_Word stub_in_name_index = strtab_add(stub_in_name, strtab);
-    // // Elf32_Word stub_caller_index = strtab_add(stub_caller, strtab);
-    // Elf32_Word stub_out_name_index = strtab_add(stub_out_name, strtab);
-
-    // // Elf32_Word stub_out_namendx = strtab_add(stub_out_name, strtab);
-
-    // Elf32_Sym stub_in_sym = {
-    //     .st_name = stub_in_name_index,
-    //     .st_value = text->header.sh_size,
-    //     .st_size = sizeof(fun_stub),
-    //     .st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC),
-    //     .st_other = STV_DEFAULT,
-    //     .st_shndx = func->sym->st_shndx,  // .text section index
-    // };
-
-    // // Elf32_Sym stub_caller_sym = {
-    // //     .st_name = stub_caller_index,
-    // //     .st_value = text->header.sh_size + sizeof(fun_stub),
-    // //     .st_size = sizeof(fun_stub_64),
-    // //     .st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC),
-    // //     .st_other = STV_DEFAULT,
-    // //     .st_shndx = func->sym->st_shndx,  // .text section index
-    // // };
-
-    // Elf32_Sym stub_out_sym = {
-    //     .st_name = stub_out_name_index,
-    //     .st_value = text->header.sh_size + sizeof(fun_stub) + sizeof(fun_stub_64),
-    //     .st_size = sizeof(fun_stub_out),
-    //     .st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC),
-    //     .st_other = STV_DEFAULT,
-    //     .st_shndx = func->sym->st_shndx,  // .text section index
-    // };
-
-    // symtab_add(&stub_in_sym, symtab);
-    // // symtab_add(&stub_caller_sym, symtab);
-    // symtab_add(&stub_out_sym, symtab);
-
-    // Elf32_Rel caller_rel = {
-    //     .r_offset = text->header.sh_size + 0xe,
-    //     .r_info = ELF32_R_INFO(2, R_386_32),  // TODO: this is hardcoded, 2 is symbol related to .text
-    // };
-
-    // rel_add(&caller_rel, reltext);
-
-    // text_add(fun_stub, sizeof(fun_stub), text);
-    // Elf32_Addr lea_addr = text->header.sh_size + sizeof(fun_stub);
-    // memcpy(text->data + text->header.sh_size - sizeof(fun_stub) + 0xe, &lea_addr, sizeof(Elf32_Addr));
-
-    // // Elf32_Rel original_func_rel = {
-    // //     .r_offset = text->header.sh_size + 0x5,
-    // //     .r_info = ELF32_R_INFO(func->sym_index, R_386_PC32),
-    // // };
-    // // Elf32_Rel out_rel = {
-    // //     .r_offset = text->header.sh_size + 19,
-    // //     .r_info = ELF32_R_INFO(2, R_386_32),  // TODO: this is hardcoded, 2 is symbol related to .text
-    // // };
-
-    // // rel_add(&original_func_rel, reltext);
-    // // rel_add(&out_rel, reltext);
-
-    // text_add(fun_stub_64, sizeof(fun_stub_64), text);
-    // // Elf32_Sword addend = -4;
-    // // memcpy(text->data + text->header.sh_size - sizeof(fun_stub_64) + 0x5, &addend, sizeof(Elf32_Sword));
-    // // Elf32_Addr lea_addr_64 = text->header.sh_size;
-    // // memcpy(text->data + text->header.sh_size - sizeof(fun_stub_64) + 19, &lea_addr_64, sizeof(Elf32_Addr));
-
-    // text_add(fun_stub_out, sizeof(fun_stub_out), text);
+    symtab_add(&entry_sym, symtab);
 }
 
 void create_stubs(Elf32_Ehdr ehdr32, list_t *sections) {
