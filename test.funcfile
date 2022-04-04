@@ -1,0 +1,4 @@
+fopen ptr ptr ptr
+fclose int ptr
+fputc    int int ptr
+fputs int ptr ptr
