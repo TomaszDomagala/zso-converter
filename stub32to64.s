@@ -14,19 +14,20 @@ pushl %ebx
 pushl %edi
 pushl %esi
 # align stack
-subl $4, %esp
+# subl $4, %esp
 
 # change to 64 mode
-subl $8, %esp
 lea fun_stub_out, %ebx
-movl $0x23, 4(%esp)
+# this $8 will be consumed by lretl instruction
+subl $8, %esp
+movl $0x33, 4(%esp)
 movl %ebx, (%esp)
 lretl
 
-/*
 .code64
 fun_stub_64:
-movl $13, %eax
+movl 8(%ebp), %edi
+call myfunc
 
 
 movq %rax, %rdx
@@ -34,16 +35,14 @@ shrq $32, %rdx
 
 # change to 32 mode
 lea fun_stub_out, %ebx
+subl $8, %esp
 movl $0x23, 4(%rsp)
 movl %ebx, (%rsp)
 lretl
-*/
 .code32
 fun_stub_out:
-# argument as return value, dont call actual function yet
-movl 8(%ebp), %eax
 
-addl $4, %esp
+# addl $4, %esp
 popl %esi
 popl %edi
 popl %ebx
@@ -65,3 +64,5 @@ fun_addr:
 .long fun_stub_out1
 .long 0x23
 */
+
+
