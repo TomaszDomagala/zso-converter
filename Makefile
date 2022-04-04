@@ -3,8 +3,8 @@ all: converter
 ROOT_DIR = $(shell pwd)
 CC=gcc
 CFLAGS= -Wall -Wextra -O2 -I./src
-DEPS = src/prints.h src/fatal.h src/converter.h src/list.h src/funcfile.h
-OBJ = main.o prints.o fatal.o converter.o list.o funcfile.o
+DEPS = src/prints.h src/fatal.h src/list.h src/funcfile.h src/conv.h src/elffile.h
+OBJ = main.o prints.o fatal.o list.o funcfile.o conv.o elffile.o
 
 %.o: src/%.c $(DEPS)
 	@$(CC) -c -o $@ $< $(CFLAGS)

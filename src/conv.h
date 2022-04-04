@@ -29,6 +29,4 @@ Elf32_Shdr convert_section_header(Elf64_Shdr shdr64);
  */
 void convert_section_data(elf_section* section);
 
-
-
 #endif

@@ -9,7 +9,7 @@
 typedef struct elf_section {
     struct elf_file* s_elf;
     Elf32_Shdr s_header;
-    uint8_t* s_data;
+    void* s_data;
 } elf_section;
 
 typedef struct elf_file {
@@ -24,6 +24,8 @@ typedef struct elf_file {
  * @return elf_file* the initialy converted elf32 file
  */
 elf_file* read_elf(char* filename);
+
+void write_elf(elf_file* elf, char* filename);
 
 elf_section* find_section(const char* name, elf_file* file);
 

@@ -81,6 +81,10 @@ bool is_relatext(elf_section* section) {
     return strcmp(name, ".rela.text") == 0;
 }
 
+void adjust_addend(elf_section* text, Elf32_Addr r_offset, Elf32_Sword r_addend) {
+    memcpy(text->s_data + r_offset, &r_addend, sizeof(Elf32_Sword));
+}
+
 void convert_relatext(elf_section* relatext) {
     elf_file* elf = relatext->s_elf;
     elf_section* shstrtab = find_section(".shstrtab", elf);
@@ -144,15 +148,38 @@ void convert_relatext(elf_section* relatext) {
 }
 
 void convert_section_data(elf_section* section) {
-    char* name = section_name(section);
-
     if (is_symtab(section)) {
         convert_symtab(section);
     } else if (is_relatext(section)) {
         convert_relatext(section);
     } else {
-        printf("-) section %s not converted\n", name);
+        printf("- section %s not converted\n", section_name(section));
         return;
     }
-    printf("+) section %s converted\n", name);
+    printf("+ section %s converted\n", section_name(section));
+}
+
+void check_header(Elf64_Ehdr header) {
+    if (header.e_type != ET_REL) {
+        fatal("not a relocatable file\n");
+    }
+    if (header.e_machine != EM_X86_64) {
+        fatal("not a 64-bit x86 file\n");
+    }
+    if (header.e_shoff == 0) {
+        fatal("section header offset not found\n");
+    }
+
+    if (header.e_entry != 0) {
+        warn("entry point is not 0\n");
+    }
+    if (header.e_phoff != 0) {
+        warn("program header offset found\n");
+    }
+    if (header.e_phnum != 0) {
+        warn("program header number found\n");
+    }
+    if (header.e_phentsize != 0) {
+        warn("program header entry size found\n");
+    }
 }

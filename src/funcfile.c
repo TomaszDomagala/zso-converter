@@ -65,7 +65,7 @@ list_t* parse_funcs(char* lines) {
         }
 
         if (func.f_name != NULL) {
-            if(func.f_ret_type == f_notype) {
+            if (func.f_ret_type == f_notype) {
                 fatalf("no return type for function %s\n", func.f_name);
             }
             for (int i = 0; i < func.f_args_count; i++) {
@@ -78,6 +78,50 @@ list_t* parse_funcs(char* lines) {
     }
 
     return funcs;
+}
+
+list_t* read_funcs(char* filename) {
+    size_t content_capacity = 1024;
+    char* funcs_content = malloc(content_capacity);
+
+    funcs_content = malloc(content_capacity);
+    if (funcs_content == NULL) {
+        sysfatal("malloc", "Could not allocate memory for functions content");
+    }
+
+    FILE* funcfile = fopen(filename, "r");
+    if (funcfile == NULL) {
+        fatalf("Could not open %s\n", filename);
+    }
+
+    size_t content_size = 0;
+
+    while (1) {
+        if (content_size >= content_capacity) {
+            content_capacity = content_capacity * 2;
+            funcs_content = realloc(funcs_content, content_capacity);
+            if (funcs_content == NULL) {
+                sysfatal("realloc", "Could not allocate memory for functions file");
+            }
+        }
+        size_t n = fread(funcs_content + content_size, 1, content_capacity - content_size, funcfile);
+        if (ferror(funcfile)) {
+            sysfatalf("fread", "Could not read %s\n", filename);
+        }
+        if (feof(funcfile)) {
+            break;
+        }
+        content_size += n;
+    }
+    list_t* functions = parse_funcs(funcs_content);
+
+    printf("file %s contains %ld functions\n", filename, list_size(functions));
+    iterate_list(functions, node) {
+        struct f_func* func = list_element(node);
+        print_func(func);
+    }
+
+    return functions;
 }
 
 void f_type_to_str(char* str, enum f_type type) {
@@ -118,7 +162,7 @@ void print_func(struct f_func* func) {
     char type_str[32];
     f_type_to_str(type_str, func->f_ret_type);
     printf("%s %s(", type_str, func->f_name);
-    for (int i = 0; i < func->f_args_count -1; i++) {
+    for (int i = 0; i < func->f_args_count - 1; i++) {
         f_type_to_str(type_str, func->f_args_types[i]);
         printf("%s, ", type_str);
     }

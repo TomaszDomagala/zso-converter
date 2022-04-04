@@ -19,5 +19,5 @@ struct f_func {
     int f_args_count;
 };
 
-list_t* parse_funcs(char* lines);
+list_t* read_funcs(char* filename);
 void print_func(struct f_func* func);
