@@ -15,8 +15,8 @@ enum f_type {
 struct f_func {
     char* f_name;
     enum f_type f_ret_type;
-    enum f_type f_args_types[6];
     int f_args_count;
+    enum f_type f_args_types[6];
 };
 
 list_t* read_funcs(char* filename);

@@ -3,9 +3,23 @@
 #include <elf.h>
 #include <string.h>
 
-void build_global_stub(Elf32_Word func_sym_index, elf_file *elf);
+#include "fatal.h"
+#include "funcfile.h"
+#include "list.h"
 
-void build_exterbal_stub(Elf32_Word func_sym_index, elf_file *elf);
+void build_global_stub(Elf32_Word func_sym_index, struct f_func *func_type, elf_file *elf);
+
+void build_exterbal_stub(Elf32_Word func_sym_index, struct f_func *func_type, elf_file *elf);
+
+struct f_func *find_function(char *name, list_t *functions) {
+    iterate_list(functions, node) {
+        struct f_func *func = list_element(node);
+        if (strcmp(func->f_name, name) == 0) {
+            return func;
+        }
+    }
+    return NULL;
+}
 
 void build_stubs(elf_file *elf, list_t *functions) {
     elf_section *symtab = find_section(".symtab", elf);
@@ -15,11 +29,16 @@ void build_stubs(elf_file *elf, list_t *functions) {
     for (Elf32_Word i = 0; i < symnum; i++) {
         // Get data pointer each time, as add_sym can realloc.
         Elf32_Sym *sym = (Elf32_Sym *)symtab->s_data + i;
+        char *name = strtab->s_data + sym->st_name;
 
         if (ELF32_ST_TYPE(sym->st_info) == STT_FUNC && ELF32_ST_BIND(sym->st_info) == STB_GLOBAL) {
-            // struct f_func *f_func = find_f_func(strtab->data + sym->st_name, functions);
+                        struct f_func *f_func = find_function(name, functions);
 
-            build_global_stub(i, elf);
+            if (f_func == NULL) {
+                fatalf("Could not find function %s in function file\n", name);
+            }
+
+            build_global_stub(i,f_func, elf );
         }
     }
 
@@ -31,7 +50,13 @@ void build_stubs(elf_file *elf, list_t *functions) {
         char *name = strtab->s_data + sym->st_name;
 
         if (strcmp(name, external_function) == 0 && ELF32_ST_TYPE(sym->st_info) == STT_NOTYPE && ELF32_ST_BIND(sym->st_info) == STB_GLOBAL) {
-            build_exterbal_stub(i, elf);
+            struct f_func *f_func = find_function(name, functions);
+            if (f_func == NULL) {
+                // symbol is not a function
+                continue;
+            }
+
+            build_exterbal_stub(i, f_func, elf);
         }
     }
 }
@@ -284,7 +309,7 @@ size_t build_stub32_exit(elf_file *elf) {
     return text_push(elf, stub32_exit_code, sizeof(stub32_exit_code));
 }
 
-void build_global_stub(Elf32_Word func_sym_index, elf_file *elf) {
+void build_global_stub(Elf32_Word func_sym_index, struct f_func *func_type, elf_file *elf) {
     elf_section *text = find_section(".text", elf);
     elf_section *strtab = find_section(".strtab", elf);
     elf_section *symtab = find_section(".symtab", elf);
@@ -297,7 +322,7 @@ void build_global_stub(Elf32_Word func_sym_index, elf_file *elf) {
 
     // swap original name with stub name
     char *name = prefixstr("__orig_loc__", strtab->s_data + func_name);
-    Elf32_Word name_index = strtab_push(elf,name);
+    Elf32_Word name_index = strtab_push(elf, name);
     sym->st_name = name_index;
 
     stub_size += build_stub64_entry(elf);
@@ -314,10 +339,10 @@ void build_global_stub(Elf32_Word func_sym_index, elf_file *elf) {
         .st_other = STV_DEFAULT,
         .st_shndx = sym->st_shndx,  // .text section index
     };
-    symtab_push(elf,&stub_sym);
+    symtab_push(elf, &stub_sym);
 }
 
-void build_exterbal_stub(Elf32_Word func_sym_index, elf_file *elf){
+void build_exterbal_stub(Elf32_Word func_sym_index, struct f_func *func_type, elf_file *elf) {
     elf_section *text = find_section(".text", elf);
     elf_section *strtab = find_section(".strtab", elf);
     elf_section *symtab = find_section(".symtab", elf);
@@ -325,7 +350,6 @@ void build_exterbal_stub(Elf32_Word func_sym_index, elf_file *elf){
     // Copy external function symbol
     Elf32_Sym copy_sym = ((Elf32_Sym *)symtab->s_data)[func_sym_index];
     Elf32_Word copy_index = symtab_push(elf, &copy_sym);
-
 
     Elf32_Word stub_start = text->s_header.sh_size;
     size_t stub_size = 0;
@@ -340,7 +364,7 @@ void build_exterbal_stub(Elf32_Word func_sym_index, elf_file *elf){
     // so relocations will use this one
     Elf32_Sym *stub_sym = (Elf32_Sym *)symtab->s_data + func_sym_index;
     char *stub_name = prefixstr("__stub_ext__", strtab->s_data + stub_sym->st_name);
-    Elf32_Word stub_name_index = strtab_push(elf,stub_name);
+    Elf32_Word stub_name_index = strtab_push(elf, stub_name);
 
     stub_sym->st_name = stub_name_index;
     stub_sym->st_value = stub_start;

@@ -27,6 +27,12 @@ lretl
 .code64
 fun_stub_64:
 movl 8(%ebp), %edi
+movl 12(%ebp), %esi
+movl 16(%ebp), %ebx
+movl 20(%ebp), %ecx
+movl 24(%ebp), %r8d
+movl 28(%ebp), %r9d
+
 call myfunc
 
 

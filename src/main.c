@@ -19,12 +19,14 @@ int main(int argc, char* argv[]) {
 
     elf_file* elf = read_elf(argv[1]);
 
+    list_t* functions = read_funcs(argv[2]);
+
     elf_section* eh_frame = find_section(".eh_frame", elf);
     memset(&eh_frame->s_header, 0, sizeof(eh_frame->s_header));
     elf_section* rela_eh_frame = find_section(".rela.eh_frame", elf);
     memset(&rela_eh_frame->s_header, 0, sizeof(rela_eh_frame->s_header));
 
-    build_stubs(elf, NULL);
+    build_stubs(elf, functions);
 
     write_elf(elf, argv[3]);
 
