@@ -3,8 +3,8 @@ all: converter
 ROOT_DIR = $(shell pwd)
 CC=gcc
 CFLAGS= -Wall -Wextra -O2 -I./src
-DEPS = src/prints.h src/fatal.h src/list.h src/funcfile.h src/conv.h src/elffile.h
-OBJ = main.o prints.o fatal.o list.o funcfile.o conv.o elffile.o
+DEPS = src/prints.h src/fatal.h src/list.h src/funcfile.h src/conv.h src/elffile.h src/stubs.h
+OBJ = main.o prints.o fatal.o list.o funcfile.o conv.o elffile.o stubs.o
 
 %.o: src/%.c $(DEPS)
 	@$(CC) -c -o $@ $< $(CFLAGS)
@@ -26,7 +26,7 @@ stub32to64.o: stub32to64.s
 	as --32 -o stub32to64.o stub32to64.s
 
 newelf.o: converter test-64.o
-	./converter test-64.o
+	./converter test-64.o x $@
 
 mvp.out: newelf.o mvp/test.c
 	gcc -m32 -g -no-pie -o mvp.out $^

@@ -24,7 +24,7 @@ int doo(int x){
 }
 
 int real_main(){
-	int x = 2;
+	int x = 20;
 	x = bar(x);
 	return x;
 }

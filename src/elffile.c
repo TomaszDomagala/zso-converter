@@ -102,8 +102,8 @@ char* section_name(elf_section* section) {
     return (char*)shstrtab->s_data + section->s_header.sh_name;
 }
 
-elf_section* find_section(const char* name, elf_file* file) {
-    iterate_list(file->e_sections, node) {
+elf_section* find_section(const char* name, elf_file* elf) {
+    iterate_list(elf->e_sections, node) {
         elf_section* section = list_element(node);
         if (strcmp(section_name(section), name) == 0) {
             return section;
@@ -175,4 +175,61 @@ void write_elf(elf_file* elf, char* filename) {
     }
 
     fclose(file);
+}
+
+Elf32_Word symtab_push(elf_file* elf, Elf32_Sym* sym) {
+    elf_section* symtab = find_section(".symtab", elf);
+
+    Elf32_Word new_size = symtab->s_header.sh_size + sizeof(Elf32_Sym);
+    symtab->s_data = realloc(symtab->s_data, new_size);
+    if (!symtab->s_data) {
+        sysfatalf("realloc", "could not reallocate %ld bytes\n", new_size);
+    }
+    memcpy(symtab->s_data + symtab->s_header.sh_size, sym, sizeof(Elf32_Sym));
+    symtab->s_header.sh_size = new_size;
+
+    return symtab->s_header.sh_size / sizeof(Elf32_Sym) - 1;
+}
+
+Elf32_Word strtab_push(elf_file* elf, char* str) {
+    elf_section* strtab = find_section(".strtab", elf);
+
+    Elf32_Word new_size = strtab->s_header.sh_size + strlen(str) + 1;
+    strtab->s_data = realloc(strtab->s_data, new_size);
+    if (!strtab->s_data) {
+        sysfatalf("realloc", "could not reallocate %ld bytes\n", new_size);
+    }
+    Elf32_Word index = strtab->s_header.sh_size;
+
+    strcpy((char*)strtab->s_data + index, str);
+    strtab->s_header.sh_size = new_size;
+
+    return index;
+}
+
+Elf32_Word reltext_push(elf_file* elf, Elf32_Rel* rel) {
+    elf_section* reltab = find_section(".rel.text", elf);
+
+    Elf32_Word new_size = reltab->s_header.sh_size + sizeof(Elf32_Rel);
+    reltab->s_data = realloc(reltab->s_data, new_size);
+    if (!reltab->s_data) {
+        sysfatalf("realloc", "could not reallocate %ld bytes\n", new_size);
+    }
+    memcpy(reltab->s_data + reltab->s_header.sh_size, rel, sizeof(Elf32_Rel));
+    reltab->s_header.sh_size = new_size;
+
+    return reltab->s_header.sh_size / sizeof(Elf32_Rel) - 1;
+}
+
+size_t text_push(elf_file* elf, char* bytes, size_t size) {
+    elf_section* text = find_section(".text", elf);
+
+    Elf32_Word new_size = text->s_header.sh_size + size;
+    text->s_data = realloc(text->s_data, new_size);
+    if (!text->s_data) {
+        sysfatalf("realloc", "could not reallocate %ld bytes\n", new_size);
+    }
+    memcpy(text->s_data + text->s_header.sh_size, bytes, size);
+    text->s_header.sh_size = new_size;
+    return size;
 }

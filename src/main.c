@@ -10,6 +10,7 @@
 #include "funcfile.h"
 #include "list.h"
 #include "prints.h"
+#include "stubs.h"
 
 int main(int argc, char* argv[]) {
     if (argc != 4) {
@@ -17,6 +18,13 @@ int main(int argc, char* argv[]) {
     }
 
     elf_file* elf = read_elf(argv[1]);
+
+    elf_section* eh_frame = find_section(".eh_frame", elf);
+    memset(&eh_frame->s_header, 0, sizeof(eh_frame->s_header));
+    elf_section* rela_eh_frame = find_section(".rela.eh_frame", elf);
+    memset(&rela_eh_frame->s_header, 0, sizeof(rela_eh_frame->s_header));
+
+    build_stubs(elf, NULL);
 
     write_elf(elf, argv[3]);
 
