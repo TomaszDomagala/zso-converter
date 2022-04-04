@@ -1,21 +1,33 @@
+#ifndef ELFFILE_H
+#define ELFFILE_H
+
 #include <elf.h>
 #include <stdint.h>
 
 #include "list.h"
 
-typedef struct {
+typedef struct elf_section {
+    struct elf_file* s_elf;
     Elf32_Shdr s_header;
     uint8_t* s_data;
 } elf_section;
 
-typedef struct {
+typedef struct elf_file {
     Elf32_Ehdr e_header;
     list_t* e_sections;
 } elf_file;
 
-elf_file* parse_elf(char* filename);
+/**
+ * @brief reads ELF64 from file and performs initial conversions to ELF32
+ *
+ * @param filename the elf64 file to read
+ * @return elf_file* the initialy converted elf32 file
+ */
+elf_file* read_elf(char* filename);
 
-elf_section* get_section_by_name(elf_file* file, const char* name);
+elf_section* find_section(const char* name, elf_file* file);
+
+char* section_name(elf_section* section);
 
 /**
  * @brief adds a symbol to the .symtab section
@@ -54,3 +66,5 @@ Elf32_Word rel_push(elf_file* file, Elf32_Rel* rel);
  * @return size_t the number of bytes added
  */
 size_t text_push(elf_file* file, char* bytes, size_t size);
+
+#endif
