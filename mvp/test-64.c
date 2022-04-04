@@ -1,4 +1,4 @@
-// extern int doo(int x);
+extern int doo(int x);
 
 int foo(int x) {
 	int z = x * 2;
@@ -7,6 +7,6 @@ int foo(int x) {
 
 int bar(int x) {
 	int z = foo(x) + x;
-
-	return z;
+	int zz = doo(z + 1);
+	return zz;
 }

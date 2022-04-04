@@ -276,12 +276,12 @@ char stub_exit_code[] = {
     0xc3,  // ret
 };
 
-size_t build_stub_entry(Elf32_Ehdr ehdr32, list_t *sections) {
+size_t build_stub64_entry(Elf32_Ehdr ehdr32, list_t *sections) {
     struct section32 *text = find_section32(".text", ehdr32, sections);
     return text_add(stub_entry_code, sizeof(stub_entry_code), text);
 }
 
-size_t build_jump_32_to_64(Elf32_Ehdr ehdr32, list_t *sections) {
+size_t build_change_32_to_64(Elf32_Ehdr ehdr32, list_t *sections) {
     struct section32 *text = find_section32(".text", ehdr32, sections);
     struct section32 *reltext = find_section32(".rel.text", ehdr32, sections);
 
@@ -341,9 +341,102 @@ size_t build_change_64_to_32(Elf32_Ehdr ehdr32, list_t *sections) {
     return w;
 }
 
-size_t build_stub_exit(Elf32_Ehdr ehdr32, list_t *sections) {
+size_t build_stub64_exit(Elf32_Ehdr ehdr32, list_t *sections) {
     struct section32 *text = find_section32(".text", ehdr32, sections);
     return text_add(stub_exit_code, sizeof(stub_exit_code), text);
+}
+
+/*
+This is 64-bit code.
+
+   0:	53                   	push   %rbx
+   1:	55                   	push   %rbp
+   2:	41 54                	push   %r12
+   4:	41 55                	push   %r13
+   6:	41 56                	push   %r14
+   8:	41 57                	push   %r15
+   a:	48 83 ec 08          	sub    $0x8,%rsp
+   e:	89 3c 24             	mov    %edi,(%rsp)
+*/
+char stub32_entry_code[] = {
+    0x53,                                      // push %rbx
+    0x55,                                      // push %rbp
+    0x41, 0x54,                                // push %r12
+    0x41, 0x55,                                // push %r13
+    0x41, 0x56,                                // push %r14
+    0x41, 0x57,                                // push %r15
+    0x48, 0x83, 0xec, 0x08,                    // sub $0x8,%rsp
+    0x89, 0x3c, 0x24,                          // mov %edi,(%rsp)
+};
+
+/*
+This is 32-bit code.
+
+   0:	6a 2b                	push   $0x2b
+   2:	1f                   	pop    %ds
+   3:	6a 2b                	push   $0x2b
+   5:	07                   	pop    %es
+   6:	e8 fc ff ff ff       	call   7 <fun_stub_32+0x7>
+*/
+char func32_caller_code[] = {
+    0x6a, 0x2b,                    // push $0x2b
+    0x1f,                          // pop %ds
+    0x6a, 0x2b,                    // push $0x2b
+    0x07,                          // pop %es
+    0xe8, 0x00, 0x00, 0x00, 0x00,  // call 7 <fun_stub_32+0x7>
+};
+
+/*
+This is 64-bit code.
+
+  47:	48 83 c4 08          	add    $0x8,%rsp
+  4b:	41 5f                	pop    %r15
+  4d:	41 5e                	pop    %r14
+  4f:	41 5d                	pop    %r13
+  51:	41 5c                	pop    %r12
+  53:	5d                   	pop    %rbp
+  54:	5b                   	pop    %rbx
+  55:	c3                   	retq 
+*/
+char stub32_exit_code[] = {
+    0x48, 0x83, 0xc4, 0x08,    // add $0x8,%rsp
+    0x41, 0x5f,                // pop %r15
+    0x41, 0x5e,                // pop %r14
+    0x41, 0x5d,                // pop %r13
+    0x41, 0x5c,                // pop %r12
+    0x5d,                      // pop %rbp
+    0x5b,                      // pop %rbx
+    0xc3,                      // retq
+};
+
+size_t build_stub32_entry(Elf32_Ehdr ehdr32, list_t *sections) {
+    struct section32 *text = find_section32(".text", ehdr32, sections);
+    return text_add(stub32_entry_code, sizeof(stub32_entry_code), text);
+}
+
+size_t build_func32_caller(struct global_func *func, Elf32_Ehdr ehdr32, list_t *sections) {
+    struct section32 *text = find_section32(".text", ehdr32, sections);
+    struct section32 *reltext = find_section32(".rel.text", ehdr32, sections);
+
+    // look at char func32_caller_code[]
+    Elf32_Addr r_offset = text->header.sh_size + 7;
+    Elf32_Sword addend = -4;
+
+    Elf32_Rel rel = {
+        .r_offset = r_offset,
+        .r_info = ELF32_R_INFO(func->sym_index, R_386_PC32),
+    };
+
+    rel_add(&rel, reltext);
+    size_t w = text_add(func32_caller_code, sizeof(func32_caller_code), text);
+    memcpy(text->data + r_offset, &addend, sizeof(addend));
+
+    return w;
+}
+
+size_t build_stub32_exit(Elf32_Ehdr ehdr32, list_t *sections) {
+    struct section32 *text = find_section32(".text", ehdr32, sections);
+    return text_add(stub32_exit_code, sizeof(stub32_exit_code), text);
 }
 
 void create_function_stubs(struct global_func *func, Elf32_Ehdr ehdr32, list_t *sections) {
@@ -354,21 +447,19 @@ void create_function_stubs(struct global_func *func, Elf32_Ehdr ehdr32, list_t *
     Elf32_Word func_name = func->sym->st_name;
     Elf32_Word stub_start = text->header.sh_size;
     size_t stub_size = 0;
-    
+
     // swap original name with stub name
-    char *name = prefixstr("__stub__", strtab->data + func->sym->st_name);
+    char *name = prefixstr("__orig_loc__", strtab->data + func->sym->st_name);
     Elf32_Word name_index = strtab_add(name, strtab);
     func->sym->st_name = name_index;
-    printf("dupa: %s\n", (char*)strtab->data + func->sym->st_name);
 
-    stub_size += build_stub_entry(ehdr32, sections);
-    stub_size += build_jump_32_to_64(ehdr32, sections);
+    stub_size += build_stub64_entry(ehdr32, sections);
+    stub_size += build_change_32_to_64(ehdr32, sections);
     stub_size += build_func64_caller(func, ehdr32, sections);
     stub_size += build_change_64_to_32(ehdr32, sections);
-    stub_size += build_stub_exit(ehdr32, sections);
+    stub_size += build_stub64_exit(ehdr32, sections);
 
-
-    Elf32_Sym entry_sym = {
+    Elf32_Sym stub_sym = {
         .st_name = func_name,
         .st_value = stub_start,
         .st_size = stub_size,
@@ -376,17 +467,68 @@ void create_function_stubs(struct global_func *func, Elf32_Ehdr ehdr32, list_t *
         .st_other = STV_DEFAULT,
         .st_shndx = func->sym->st_shndx,  // .text section index
     };
+    symtab_add(&stub_sym, symtab);
+}
 
-    symtab_add(&entry_sym, symtab);
+list_node_t *list_element_at(list_t *list, size_t index) {
+    size_t n = list_size(list);
+    if (index >= n) {
+        fatalf("list_element_at: index %zu >= list size %zu\n", index, n);
+    }
+    list_node_t *node = list_head(list);
+    for (size_t i = 0; i < index; i++) {
+        node = list_next(node);
+    }
+    return node;
+}
+
+void create_external_stubs(int func_sym_index, Elf32_Ehdr ehdr32, list_t *sections) {
+    struct section32 *text = find_section32(".text", ehdr32, sections);
+    struct section32 *strtab = find_section32(".strtab", ehdr32, sections);
+    struct section32 *symtab = find_section32(".symtab", ehdr32, sections);
+
+    printf("index: %d\n", func_sym_index);
+
+    // Copy external function symbol
+    Elf32_Sym copy_sym = ((Elf32_Sym *)symtab->data)[func_sym_index];
+    Elf32_Word copy_index = symtab_add(&copy_sym, symtab);
+
+    struct global_func func = {
+        .sym = &copy_sym,
+        .sym_index = copy_index,
+    };
+
+    Elf32_Word stub_start = text->header.sh_size;
+    size_t stub_size = 0;
+
+    stub_size += build_stub32_entry(ehdr32, sections);
+    stub_size += build_change_64_to_32(ehdr32, sections);
+    stub_size += build_func32_caller(&func, ehdr32, sections);
+    stub_size += build_change_32_to_64(ehdr32, sections);
+    stub_size += build_stub32_exit(ehdr32, sections);
+
+    // Use the original symbol as the stub symbol
+    // so relocations will use this one
+    Elf32_Sym *stub_sym = (Elf32_Sym *)symtab->data + func_sym_index;
+    char *stub_name = prefixstr("__stub_ext__", strtab->data + stub_sym->st_name);
+    Elf32_Word stub_name_index = strtab_add(stub_name, strtab);
+
+    stub_sym->st_name = stub_name_index;
+    stub_sym->st_value = stub_start;
+    stub_sym->st_size = stub_size;
+    stub_sym->st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC);
+    stub_sym->st_other = STV_DEFAULT;
+    stub_sym->st_shndx = 1;  // .text section index FIXME hardcoded
 }
 
 void create_stubs(Elf32_Ehdr ehdr32, list_t *sections) {
     struct section32 *symtab = find_section32(".symtab", ehdr32, sections);
+    struct section32 *strtab = find_section32(".strtab", ehdr32, sections);
 
     Elf32_Word symnum = symtab->header.sh_size / symtab->header.sh_entsize;
     for (Elf32_Word i = 0; i < symnum; i++) {
         // Get data pointer each time, as add_sym can realloc.
-        Elf32_Sym *sym = (Elf32_Sym*)symtab->data + i;
+        Elf32_Sym *sym = (Elf32_Sym *)symtab->data + i;
 
         if (ELF32_ST_TYPE(sym->st_info) == STT_FUNC && ELF32_ST_BIND(sym->st_info) == STB_GLOBAL) {
             struct global_func func = {
@@ -395,6 +537,17 @@ void create_stubs(Elf32_Ehdr ehdr32, list_t *sections) {
             };
 
             create_function_stubs(&func, ehdr32, sections);
+        }
+    }
+    // TODO: check with function file.
+    char *external_function = "doo";
+
+    for (Elf32_Word i = 0; i < symnum; i++) {
+        Elf32_Sym *sym = (Elf32_Sym *)symtab->data + i;
+        char *name = strtab->data + sym->st_name;
+
+        if (strcmp(name, external_function) == 0 && ELF32_ST_TYPE(sym->st_info) == STT_NOTYPE && ELF32_ST_BIND(sym->st_info) == STB_GLOBAL) {
+            create_external_stubs(i, ehdr32, sections);
         }
     }
 }

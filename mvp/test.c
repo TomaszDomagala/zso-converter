@@ -18,8 +18,13 @@
 // }
 extern int bar(int x);
 
+int doo(int x){
+	int y = x + 1;
+	return y;
+}
+
 int real_main(){
-	int x = 1000;
+	int x = 1;
 	x = bar(x);
 	return x;
 }
