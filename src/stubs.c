@@ -32,13 +32,13 @@ void build_stubs(elf_file *elf, list_t *functions) {
         char *name = strtab->s_data + sym->st_name;
 
         if (ELF32_ST_TYPE(sym->st_info) == STT_FUNC && ELF32_ST_BIND(sym->st_info) == STB_GLOBAL) {
-                        struct f_func *f_func = find_function(name, functions);
+            struct f_func *f_func = find_function(name, functions);
 
             if (f_func == NULL) {
                 fatalf("Could not find function %s in function file\n", name);
             }
 
-            build_global_stub(i,f_func, elf );
+            build_global_stub(i, f_func, elf);
         }
     }
 
@@ -107,13 +107,11 @@ char change_32_to_64_code[] = {
 /*
 This is 64-bit code.
 
-  18:	67 8b 7d 08          	mov    0x8(%ebp),%edi
   1c:	e8 00 00 00 00       	callq  21 <fun_stub_64+0x9>
   21:	48 89 c2             	mov    %rax,%rdx
   24:	48 c1 ea 20          	shr    $0x20,%rdx
 */
 char func64_caller_code[] = {
-    0x67, 0x8b, 0x7d, 0x08,        // mov 0x8(%ebp),%edi
     0xe8, 0x00, 0x00, 0x00, 0x00,  // callq fun_stub_64+0x9
     0x48, 0x89, 0xc2,              // mov %rax,%rdx
     0x48, 0xc1, 0xea, 0x20,        // shr $0x20,%rdx
@@ -177,11 +175,53 @@ size_t build_change_32_to_64(elf_file *elf) {
     return w;
 }
 
+/*
+The last value in each row is to be overwritten depending on
+the types of the arguments.
+
+  1b:	48 8b 7d 08          	mov    0x8(%rbp),%rdi
+  1f:	48 8b 75 0c          	mov    0xc(%rbp),%rsi
+  23:	48 8b 5d 10          	mov    0x10(%rbp),%rbx
+  27:	48 8b 4d 14          	mov    0x14(%rbp),%rcx
+  2b:	4c 8b 45 18          	mov    0x18(%rbp),%r8
+  2f:	4c 8b 4d 1c          	mov    0x1c(%rbp),%r9
+*/
+const int stacktoreg_instr = 4;
+const int argument_pos = stacktoreg_instr - 1;
+const char stack_to_reg[] = {
+    0x48, 0x8b, 0x7d, 0x08,  // mov 0x8(%rbp),%rdi
+    0x48, 0x8b, 0x75, 0x0c,  // mov 0xc(%rbp),%rsi
+    0x48, 0x8b, 0x5d, 0x10,  // mov 0x10(%rbp),%rbx
+    0x48, 0x8b, 0x4d, 0x14,  // mov 0x14(%rbp),%rcx
+    0x4c, 0x8b, 0x45, 0x18,  // mov 0x18(%rbp),%r8
+    0x4c, 0x8b, 0x4d, 0x1c,  // mov 0x1c(%rbp),%r9
+};
+
+size_t build_func64_argload(struct f_func *func_type, elf_file *elf) {
+    char arg_load_code[128];
+    memcpy(arg_load_code, stack_to_reg, sizeof(stack_to_reg));
+    
+    int arg_offset = 8;
+    int arg_count = func_type->f_args_count;
+
+    for (int i = 0; i < arg_count; i++) {
+        arg_load_code[i * stacktoreg_instr + argument_pos] = arg_offset;
+        enum f_type arg_type = func_type->f_args_types[i];
+        if (arg_type == f_longlong || arg_type == f_ulonglong) {
+            arg_offset += 8;
+        } else {
+            arg_offset += 4;
+        }
+    }
+    
+    return text_push(elf, arg_load_code, arg_count * stacktoreg_instr);
+}
+
 size_t build_func64_caller(int func_sym_index, elf_file *elf) {
     elf_section *text = find_section(".text", elf);
 
     // look at char func64_caller_code[]
-    Elf32_Addr r_offset = text->s_header.sh_size + 5;
+    Elf32_Addr r_offset = text->s_header.sh_size + 1;
     Elf32_Sword addend = -4;
 
     Elf32_Rel func_rel = {
@@ -327,6 +367,7 @@ void build_global_stub(Elf32_Word func_sym_index, struct f_func *func_type, elf_
 
     stub_size += build_stub64_entry(elf);
     stub_size += build_change_32_to_64(elf);
+    stub_size += build_func64_argload(func_type, elf);
     stub_size += build_func64_caller(func_sym_index, elf);
     stub_size += build_change_64_to_32(elf);
     stub_size += build_stub64_exit(elf);

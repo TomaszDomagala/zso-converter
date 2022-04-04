@@ -222,6 +222,10 @@ Elf32_Word reltext_push(elf_file* elf, Elf32_Rel* rel) {
 }
 
 size_t text_push(elf_file* elf, char* bytes, size_t size) {
+    if (size == 0) {
+        return 0;
+    }
+
     elf_section* text = find_section(".text", elf);
 
     Elf32_Word new_size = text->s_header.sh_size + size;

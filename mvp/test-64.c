@@ -1,12 +1,11 @@
-extern int doo(int x);
+// extern int doo(int x);
 
-int foo(int x) {
+long long foo(long long x) {
 	int z = x * 2;
 	return z;
 }
 
-int bar(int x) {
-	int z = foo(x);
-	int zz = doo(z);
-	return zz;
+long long bar(int x, long long y) {
+	long long z = foo(x + y);
+	return z;
 }

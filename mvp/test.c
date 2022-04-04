@@ -16,21 +16,22 @@
 	
 // 	return x;
 // }
-extern int bar(int x);
+extern long long bar(int x, long long y);
 
-int doo(int x){
-	int y = x + 1;
-	return y;
-}
+// int doo(int x){
+// 	int y = x + 1;
+// 	return y;
+// }
 
-int real_main(){
+long long real_main(){
 	int x = 20;
-	x = bar(x);
-	return x;
+	long long y = 30;
+	long long z = bar(x, y);
+	return z;
 }
 
 int main() {
 	int res = real_main();
-	printf("res: %d\n", res);
+	printf("res: %ld\n", res);
 	return 0;
 }
