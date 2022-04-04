@@ -1,11 +1,13 @@
 #include <stdio.h>
 
-int fun_stub(int);
+long long foo(long long x) {
+    return x + 1;
+}
 
 int main(){
-    for (int i = 0; i < 10; i++) {
-        printf("%d\n", fun_stub(i));
-    }
+    long long x = 2;
+    x = foo(x);
+    printf("x: %lld\n", x);
 
     return 0;
 }

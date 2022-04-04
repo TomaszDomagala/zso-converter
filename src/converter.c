@@ -9,6 +9,7 @@
 
 #include "fatal.h"
 #include "list.h"
+#include "funcfile.h"
 
 struct section64 {
     Elf64_Shdr header;
@@ -32,9 +33,9 @@ void write_section32_data(FILE *file, struct section32 *section);
 
 void convert_section32(struct section32 *section, Elf32_Ehdr ehdr32, list_t *all_sections);
 
-void create_stubs(Elf32_Ehdr ehdr32, list_t *sections);
+void create_stubs(Elf32_Ehdr ehdr32, list_t *sections, list_t* functions);
 
-void convert_elf(Elf64_Ehdr ehdr64, Elf64_Shdr *shdrs64, FILE *elf64file) {
+void convert_elf(Elf64_Ehdr ehdr64, Elf64_Shdr *shdrs64, FILE *elf64file, list_t* functions) {
     // struct section32 *sections;
     // sections = malloc(sizeof(struct section32) * ehdr64.e_shnum);
     list_t *sections = list_create(sizeof(struct section32));
@@ -55,7 +56,7 @@ void convert_elf(Elf64_Ehdr ehdr64, Elf64_Shdr *shdrs64, FILE *elf64file) {
         convert_section32(section, ehdr32, sections);
     }
 
-    create_stubs(ehdr32, sections);
+    create_stubs(ehdr32, sections, functions);
 
     // TODO remove this
     struct section32 *eh_frame = find_section32(".eh_frame", ehdr32, sections);
@@ -301,7 +302,7 @@ size_t build_change_32_to_64(Elf32_Ehdr ehdr32, list_t *sections) {
     return w;
 }
 
-size_t build_func64_caller(struct global_func *func, Elf32_Ehdr ehdr32, list_t *sections) {
+size_t build_func64_caller(int func_sym_index, Elf32_Ehdr ehdr32, list_t *sections) {
     struct section32 *text = find_section32(".text", ehdr32, sections);
     struct section32 *reltext = find_section32(".rel.text", ehdr32, sections);
 
@@ -311,7 +312,7 @@ size_t build_func64_caller(struct global_func *func, Elf32_Ehdr ehdr32, list_t *
 
     Elf32_Rel func_rel = {
         .r_offset = r_offset,
-        .r_info = ELF32_R_INFO(func->sym_index, R_386_PC32),
+        .r_info = ELF32_R_INFO(func_sym_index, R_386_PC32),
     };
 
     rel_add(&func_rel, reltext);
@@ -439,23 +440,25 @@ size_t build_stub32_exit(Elf32_Ehdr ehdr32, list_t *sections) {
     return text_add(stub32_exit_code, sizeof(stub32_exit_code), text);
 }
 
-void create_function_stubs(struct global_func *func, Elf32_Ehdr ehdr32, list_t *sections) {
+void create_function_stubs(int func_sym_index, Elf32_Ehdr ehdr32, list_t *sections) {
     struct section32 *text = find_section32(".text", ehdr32, sections);
     struct section32 *strtab = find_section32(".strtab", ehdr32, sections);
     struct section32 *symtab = find_section32(".symtab", ehdr32, sections);
 
-    Elf32_Word func_name = func->sym->st_name;
+    Elf32_Sym *sym = (Elf32_Sym *)symtab->data + func_sym_index;
+
+    Elf32_Word func_name = sym->st_name;
     Elf32_Word stub_start = text->header.sh_size;
     size_t stub_size = 0;
 
     // swap original name with stub name
-    char *name = prefixstr("__orig_loc__", strtab->data + func->sym->st_name);
+    char *name = prefixstr("__orig_loc__", strtab->data + sym->st_name);
     Elf32_Word name_index = strtab_add(name, strtab);
-    func->sym->st_name = name_index;
+    sym->st_name = name_index;
 
     stub_size += build_stub64_entry(ehdr32, sections);
     stub_size += build_change_32_to_64(ehdr32, sections);
-    stub_size += build_func64_caller(func, ehdr32, sections);
+    stub_size += build_func64_caller(func_sym_index, ehdr32, sections);
     stub_size += build_change_64_to_32(ehdr32, sections);
     stub_size += build_stub64_exit(ehdr32, sections);
 
@@ -465,7 +468,7 @@ void create_function_stubs(struct global_func *func, Elf32_Ehdr ehdr32, list_t *
         .st_size = stub_size,
         .st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC),
         .st_other = STV_DEFAULT,
-        .st_shndx = func->sym->st_shndx,  // .text section index
+        .st_shndx = sym->st_shndx,  // .text section index
     };
     symtab_add(&stub_sym, symtab);
 }
@@ -486,8 +489,6 @@ void create_external_stubs(int func_sym_index, Elf32_Ehdr ehdr32, list_t *sectio
     struct section32 *text = find_section32(".text", ehdr32, sections);
     struct section32 *strtab = find_section32(".strtab", ehdr32, sections);
     struct section32 *symtab = find_section32(".symtab", ehdr32, sections);
-
-    printf("index: %d\n", func_sym_index);
 
     // Copy external function symbol
     Elf32_Sym copy_sym = ((Elf32_Sym *)symtab->data)[func_sym_index];
@@ -521,7 +522,17 @@ void create_external_stubs(int func_sym_index, Elf32_Ehdr ehdr32, list_t *sectio
     stub_sym->st_shndx = 1;  // .text section index FIXME hardcoded
 }
 
-void create_stubs(Elf32_Ehdr ehdr32, list_t *sections) {
+struct f_func *find_f_func(char *name, list_t *functions){
+    iterate_list(functions, node){
+        struct f_func *func = list_element(node);
+        if (strcmp(func->f_name, name) == 0) {
+            return func;
+        }
+    }
+    fatalf("function %s not found\n", name);
+}
+
+void create_stubs(Elf32_Ehdr ehdr32, list_t *sections, list_t* functions) {
     struct section32 *symtab = find_section32(".symtab", ehdr32, sections);
     struct section32 *strtab = find_section32(".strtab", ehdr32, sections);
 
@@ -531,12 +542,10 @@ void create_stubs(Elf32_Ehdr ehdr32, list_t *sections) {
         Elf32_Sym *sym = (Elf32_Sym *)symtab->data + i;
 
         if (ELF32_ST_TYPE(sym->st_info) == STT_FUNC && ELF32_ST_BIND(sym->st_info) == STB_GLOBAL) {
-            struct global_func func = {
-                .sym = sym,
-                .sym_index = i,
-            };
 
-            create_function_stubs(&func, ehdr32, sections);
+            // struct f_func *f_func = find_f_func(strtab->data + sym->st_name, functions);
+
+            create_function_stubs(i, ehdr32, sections);
         }
     }
     // TODO: check with function file.
