@@ -99,12 +99,31 @@ char* section_name(elf_section* section) {
     return (char*)shstrtab->s_data + section->s_header.sh_name;
 }
 
-elf_section* find_section(const char* name, elf_file* elf) {
+elf_section* try_find_section(const char* name, elf_file* elf) {
     iterate_list(elf->e_sections, node) {
         elf_section* section = list_element(node);
         if (strcmp(section_name(section), name) == 0) {
             return section;
         }
+    }
+    return NULL;
+}
+
+elf_section* find_section(const char* name, elf_file* elf) {
+    elf_section* section = try_find_section(name, elf);
+    if (section == NULL) {
+        fatalf("could not find section %s\n", name);
+    }
+    return section;
+}
+
+int section_index(const char* name, elf_file* elf) {
+    int index = 0;
+    iterate_list(elf->e_sections, node) {
+        if (strcmp(section_name(list_element(node)), name) == 0) {
+            return index;
+        }
+        index++;
     }
     fatalf("could not find section %s\n", name);
 }
@@ -188,8 +207,8 @@ Elf32_Word symtab_push(elf_file* elf, Elf32_Sym* sym) {
     return symtab->s_header.sh_size / sizeof(Elf32_Sym) - 1;
 }
 
-Elf32_Word strtab_push(elf_file* elf, char* str) {
-    elf_section* strtab = find_section(".strtab", elf);
+Elf32_Word stringtab_push(elf_file* elf, const char* section, const char* str) {
+    elf_section* strtab = find_section(section, elf);
 
     Elf32_Word new_size = strtab->s_header.sh_size + strlen(str) + 1;
     strtab->s_data = realloc(strtab->s_data, new_size);
@@ -202,6 +221,14 @@ Elf32_Word strtab_push(elf_file* elf, char* str) {
     strtab->s_header.sh_size = new_size;
 
     return index;
+}
+
+Elf32_Word strtab_push(elf_file* elf, const char* str) {
+    return stringtab_push(elf, ".strtab", str);
+}
+
+Elf32_Word shstrtab_push(elf_file* elf, const char* str) {
+    return stringtab_push(elf, ".shstrtab", str);
 }
 
 Elf32_Word reltext_push(elf_file* elf, Elf32_Rel* rel) {

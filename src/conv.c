@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "fatal.h"
+#include "list.h"
 
 Elf32_Ehdr convert_elf_header(Elf64_Ehdr ehdr64) {
     Elf32_Ehdr ehdr32;
@@ -173,9 +174,41 @@ void convert_relatext(elf_section* relatext) {
     relatext->s_header = reltext_shdr;
 }
 
+void create_reltext(elf_file* elf){
+    const char* name = ".rel.text";
+    Elf32_Shdr reltext_shdr;
+    reltext_shdr.sh_name = shstrtab_push(elf, name);
+    reltext_shdr.sh_type = SHT_REL;
+    reltext_shdr.sh_flags = SHF_INFO_LINK;
+    reltext_shdr.sh_addr = 0;
+    reltext_shdr.sh_offset = 0;
+    reltext_shdr.sh_size = 0;
+    reltext_shdr.sh_link = section_index(".symtab", elf);
+    reltext_shdr.sh_info = section_index(".text", elf);
+    reltext_shdr.sh_addralign = 8;
+    reltext_shdr.sh_entsize = sizeof(Elf32_Rel);
+
+    elf->e_header.e_shnum++;
+
+    elf_section reltext = {
+        .s_elf = elf,
+        .s_header = reltext_shdr,
+        .s_data = NULL,
+    };
+    list_add(elf->e_sections, &reltext);
+}
+
 void convert_sections(elf_file* elf) {
     convert_symtab(find_section(".symtab", elf));
-    convert_relatext(find_section(".rela.text", elf));
+
+    elf_section* relatext = try_find_section(".rela.text", elf);
+    if (relatext) {
+        convert_relatext(relatext);
+    }else{
+        printf("no .rela.text section found\n");
+        printf("creating .rel.text section\n");
+        create_reltext(elf);
+    }
 
 }
 

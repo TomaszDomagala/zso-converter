@@ -29,7 +29,11 @@ void write_elf(elf_file* elf, char* filename);
 
 elf_section* find_section(const char* name, elf_file* elf);
 
+elf_section* try_find_section(const char* name, elf_file* elf);
+
 char* section_name(elf_section* section);
+
+int section_index(const char* name, elf_file* elf);
 
 /**
  * @brief adds a symbol to the .symtab section
@@ -47,7 +51,9 @@ Elf32_Word symtab_push(elf_file* elf, Elf32_Sym* sym);
  * @param str the string to add
  * @return Elf32_Word the index of the string in the string table
  */
-Elf32_Word strtab_push(elf_file* elf, char* str);
+Elf32_Word strtab_push(elf_file* elf, const char* str);
+
+Elf32_Word shstrtab_push(elf_file* elf, const char* str);
 
 /**
  * @brief adds a rel to the .rel.text section
