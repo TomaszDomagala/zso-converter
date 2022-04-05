@@ -42,14 +42,11 @@ void build_stubs(elf_file *elf, list_t *functions) {
         }
     }
 
-    // TODO: check with function file.
-    char *external_function = "doo";
-
     for (Elf32_Word i = 0; i < symnum; i++) {
         Elf32_Sym *sym = (Elf32_Sym *)symtab->s_data + i;
         char *name = strtab->s_data + sym->st_name;
 
-        if (strcmp(name, external_function) == 0 && ELF32_ST_TYPE(sym->st_info) == STT_NOTYPE && ELF32_ST_BIND(sym->st_info) == STB_GLOBAL) {
+        if (ELF32_ST_TYPE(sym->st_info) == STT_NOTYPE && ELF32_ST_BIND(sym->st_info) == STB_GLOBAL) {
             struct f_func *f_func = find_function(name, functions);
             if (f_func == NULL) {
                 // symbol is not a function
