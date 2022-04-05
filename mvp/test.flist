@@ -1,6 +1,3 @@
-doo int int
+doo void ptr
 foo int int
-bar int uint int int
-id longlong longlong
-add longlong longlong longlong
-mod void ptr
+bar int int int

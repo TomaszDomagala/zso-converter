@@ -97,6 +97,8 @@ void convert_relatext(elf_section* relatext) {
     relatext->s_header.sh_name++;
 
     elf_section* text = find_section(".text", elf);
+    elf_section* symtab = find_section(".symtab", elf);
+    elf_section* strtab = find_section(".strtab", elf);
 
     Elf32_Word rel_num = relatext->s_header.sh_size / sizeof(Elf64_Rela);
     Elf32_Shdr reltext_shdr;
@@ -139,7 +141,31 @@ void convert_relatext(elf_section* relatext) {
                 warnf("unsupported relocation type: %d\n", type64);
                 break;
         }
+
         rel32->r_info = ELF32_R_INFO(sym, type32);
+
+
+        Elf32_Sym* sym32 = (Elf32_Sym*)(symtab->s_data) + sym;
+        printf("sym name: %s\n", (char*)strtab->s_data + sym32->st_name);
+
+        switch (ELF32_ST_TYPE(sym32->st_info)) {
+            case STT_FUNC:
+                printf("relocation %d is function\n", i);
+                break;
+            case STT_SECTION:
+                printf("relocation %d is section\n", i);
+                break;
+            case STT_OBJECT:
+                printf("relocation %d is object\n", i);
+                break;
+            case STT_NOTYPE:
+                printf("relocation %d is notype\n", i);
+                break;
+            default:
+                printf("relocation %d is unknown\n", i);
+                break;
+        }
+
         adjust_addend(text, rel32->r_offset, rela64->r_addend);
     }
     free(relatext->s_data);
@@ -147,16 +173,10 @@ void convert_relatext(elf_section* relatext) {
     relatext->s_header = reltext_shdr;
 }
 
-void convert_section_data(elf_section* section) {
-    if (is_symtab(section)) {
-        convert_symtab(section);
-    } else if (is_relatext(section)) {
-        convert_relatext(section);
-    } else {
-        printf("- section %s not converted\n", section_name(section));
-        return;
-    }
-    printf("+ section %s converted\n", section_name(section));
+void convert_sections(elf_file* elf) {
+    convert_symtab(find_section(".symtab", elf));
+    convert_relatext(find_section(".rela.text", elf));
+
 }
 
 void check_header(Elf64_Ehdr header) {

@@ -13,6 +13,32 @@ pushq %r13
 pushq %r14
 pushq %r15
 
+addq $4, %rsp
+
+movl %r9d, (%rsp)
+movl %r9d, 4(%rsp)
+movl %r9d, 8(%rsp)
+
+movl %r8d, (%rsp)
+movl %ecx, (%rsp)
+movl %edx, (%rsp)
+movl %esi, (%rsp)
+movl %edi, (%rsp)
+
+addq $4, %rsp
+addq $4, %rsp
+addq $4, %rsp
+
+movq %r9, (%rsp)
+movq %r8, (%rsp)
+movq %rcx, (%rsp)
+movq %rdx, (%rsp)
+movq %rsi, (%rsp)
+movq %rdi, (%rsp)
+
+
+
+
 subq $8, %rsp
 movl %edi, (%rsp)
 

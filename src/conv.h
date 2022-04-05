@@ -22,11 +22,13 @@ Elf32_Ehdr convert_elf_header(Elf64_Ehdr ehdr64);
  */
 Elf32_Shdr convert_section_header(Elf64_Shdr shdr64);
 
+
+
 /**
- * @brief convert section data, convertion method depends on section type
+ * @brief convert all sections in the elf file
  * 
- * @param section the section to convert
+ * @param elf the elf file to convert
  */
-void convert_section_data(elf_section* section);
+void convert_sections(elf_file* elf);
 
 #endif

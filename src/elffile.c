@@ -76,10 +76,7 @@ elf_file* read_elf(char* filename) {
     fclose(file);
 
     // section data conversion
-    iterate_list(sections, node) {
-        elf_section* section = list_element(node);
-        convert_section_data(section);
-    }
+    convert_sections(elf32);
 
     printf("file %s contains %ld sections\n", filename, list_size(sections));
 

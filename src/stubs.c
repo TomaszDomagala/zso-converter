@@ -200,7 +200,7 @@ const char stack_to_reg[] = {
 size_t build_func64_argload(struct f_func *func_type, elf_file *elf) {
     char arg_load_code[128];
     memcpy(arg_load_code, stack_to_reg, sizeof(stack_to_reg));
-    
+
     int arg_offset = 8;
     int arg_count = func_type->f_args_count;
 
@@ -213,7 +213,7 @@ size_t build_func64_argload(struct f_func *func_type, elf_file *elf) {
             arg_offset += 4;
         }
     }
-    
+
     return text_push(elf, arg_load_code, arg_count * stacktoreg_instr);
 }
 
@@ -259,6 +259,26 @@ size_t build_stub64_exit(elf_file *elf) {
     return text_push(elf, stub_exit_code, sizeof(stub_exit_code));
 }
 
+typedef struct {
+    const char code[16];
+    size_t code_size;
+    size_t arg_offset;
+} instr_arg_t;
+
+typedef struct {
+    const char code[16];
+    size_t code_size;
+} instr_t;
+
+void cpyinstr(void *dest, const instr_t *src) {
+    memcpy(dest, src->code, src->code_size);
+}
+
+void cpyinstrarg(void *dest, const instr_arg_t *src, char arg) {
+    memcpy(dest, src->code, src->code_size);
+    memcpy(dest + src->arg_offset, &arg, 1);
+}
+
 /*
 This is 64-bit code.
 
@@ -268,18 +288,14 @@ This is 64-bit code.
    4:	41 55                	push   %r13
    6:	41 56                	push   %r14
    8:	41 57                	push   %r15
-   a:	48 83 ec 08          	sub    $0x8,%rsp
-   e:	89 3c 24             	mov    %edi,(%rsp)
 */
 char stub32_entry_code[] = {
-    0x53,                    // push %rbx
-    0x55,                    // push %rbp
-    0x41, 0x54,              // push %r12
-    0x41, 0x55,              // push %r13
-    0x41, 0x56,              // push %r14
-    0x41, 0x57,              // push %r15
-    0x48, 0x83, 0xec, 0x08,  // sub $0x8,%rsp
-    0x89, 0x3c, 0x24,        // mov %edi,(%rsp)
+    0x53,        // push %rbx
+    0x55,        // push %rbp
+    0x41, 0x54,  // push %r12
+    0x41, 0x55,  // push %r13
+    0x41, 0x56,  // push %r14
+    0x41, 0x57,  // push %r15
 };
 
 /*
@@ -312,18 +328,103 @@ This is 64-bit code.
   55:	c3                   	retq
 */
 char stub32_exit_code[] = {
-    0x48, 0x83, 0xc4, 0x08,  // add $0x8,%rsp
-    0x41, 0x5f,              // pop %r15
-    0x41, 0x5e,              // pop %r14
-    0x41, 0x5d,              // pop %r13
-    0x41, 0x5c,              // pop %r12
-    0x5d,                    // pop %rbp
-    0x5b,                    // pop %rbx
-    0xc3,                    // retq
+    0x41, 0x5f,  // pop %r15
+    0x41, 0x5e,  // pop %r14
+    0x41, 0x5d,  // pop %r13
+    0x41, 0x5c,  // pop %r12
+    0x5d,        // pop %rbp
+    0x5b,        // pop %rbx
+    0xc3,        // retq
 };
 
 size_t build_stub32_entry(elf_file *elf) {
     return text_push(elf, stub32_entry_code, sizeof(stub32_entry_code));
+}
+
+/*
+This is 64-bit code.
+The last byte is the argument.
+   a:	48 83 ec 04          	sub    $0x4,%rsp
+*/
+const instr_arg_t subrsp_instr = {
+    .code = {0x48, 0x83, 0xec, 0x04},
+    .code_size = 4,
+    .arg_offset = 3,
+};
+
+/*
+This is 64-bit code.
+The last byte is the argument.
+   a:	48 83 c4 04          	add    $0x4,%rsp
+*/
+const instr_arg_t addrsp_instr = {
+    .code = {0x48, 0x83, 0xc4, 0x04},
+    .code_size = 4,
+    .arg_offset = 3,
+};
+
+const instr_t reg_to_stack_4[6] = {
+    {{0x89, 0x3c, 0x24}, 3},        // mov %edi,(%rsp)
+    {{0x89, 0x34, 0x24}, 3},        // mov %esi,(%rsp)
+    {{0x89, 0x14, 0x24}, 3},        // mov %edx,(%rsp)
+    {{0x89, 0x0c, 0x24}, 3},        // mov %ecx,(%rsp)
+    {{0x44, 0x89, 0x04, 0x24}, 4},  // mov %r8d,(%rsp)
+    {{0x44, 0x89, 0x0c, 0x24}, 4},  // mov %r9d,(%rsp)
+};
+
+/*
+  2e:	4c 89 0c 24          	mov    %r9,(%rsp)
+  32:	4c 89 04 24          	mov    %r8,(%rsp)
+  36:	48 89 0c 24          	mov    %rcx,(%rsp)
+  3a:	48 89 14 24          	mov    %rdx,(%rsp)
+  3e:	48 89 34 24          	mov    %rsi,(%rsp)
+  42:	48 89 3c 24          	mov    %rdi,(%rsp)
+*/
+const instr_t reg_to_stack_8[6] = {
+    {{0x48, 0x89, 0x3c, 0x24}, 4},  // mov %rdi,(%rsp)
+    {{0x48, 0x89, 0x34, 0x24}, 4},  // mov %rsi,(%rsp)
+    {{0x48, 0x89, 0x14, 0x24}, 4},  // mov %rdx,(%rsp)
+    {{0x48, 0x89, 0x0c, 0x24}, 4},  // mov %rcx,(%rsp)
+    {{0x4c, 0x89, 0x04, 0x24}, 4},  // mov %r8,(%rsp)
+    {{0x4c, 0x89, 0x0c, 0x24}, 4},  // mov %r9,(%rsp)
+};
+
+// same struct, but reverse order
+
+const instr_t reg_to_stack8_rev[6] = {
+    {{0x48, 0x89, 0x3c, 0x24}, 4},  // mov %rdi,(%rsp)
+    {{0x48, 0x89, 0x34, 0x24}, 4},  // mov %rsi,(%rsp)
+    {{0x48, 0x89, 0x14, 0x24}, 4},  // mov %rdx,(%rsp)
+    {{0x48, 0x89, 0x0c, 0x24}, 4},  // mov %rcx,(%rsp)
+    {{0x4c, 0x89, 0x04, 0x24}, 4},  // mov %r8,(%rsp)
+    {{0x4c, 0x89, 0x0c, 0x24}, 4},  // mov %r9,(%rsp)
+};
+
+size_t build_func32_argload(struct f_func *func_type, elf_file *elf) {
+    int arg_count = func_type->f_args_count;
+    if (arg_count == 0) {
+        return 0;
+    }
+    char code[256];
+    size_t code_size = 0;
+
+    for (int i = arg_count - 1; i >= 0; i--) {
+        int arg_size;
+        const instr_t *instr;
+
+        if (func_type->f_args_types[i] == f_longlong || func_type->f_args_types[i] == f_ulonglong) {
+            arg_size = 8;
+            instr = &reg_to_stack_8[i];
+        } else {
+            arg_size = 4;
+            instr = &reg_to_stack_4[i];
+        }
+        cpyinstrarg(code + code_size, &subrsp_instr, arg_size);
+        code_size += subrsp_instr.code_size;
+        cpyinstr(code + code_size, instr);
+        code_size += instr->code_size;
+    }
+    return text_push(elf, code, code_size);
 }
 
 size_t build_func32_caller(int func_sym_index, elf_file *elf) {
@@ -345,8 +446,21 @@ size_t build_func32_caller(int func_sym_index, elf_file *elf) {
     return w;
 }
 
-size_t build_stub32_exit(elf_file *elf) {
-    return text_push(elf, stub32_exit_code, sizeof(stub32_exit_code));
+size_t build_stub32_exit(struct f_func *func_type, elf_file *elf) {
+    int arg_stack_size = 0;
+    for (int i = 0; i < func_type->f_args_count; i++) {
+        if (func_type->f_args_types[i] == f_longlong || func_type->f_args_types[i] == f_ulonglong) {
+            arg_stack_size += 8;
+        } else {
+            arg_stack_size += 4;
+        }
+    }
+    char code[256];
+    cpyinstrarg(code, &addrsp_instr, arg_stack_size);
+
+    size_t s = text_push(elf, code, addrsp_instr.code_size);
+    s += text_push(elf, stub32_exit_code, sizeof(stub32_exit_code));
+    return s;
 }
 
 void build_global_stub(Elf32_Word func_sym_index, struct f_func *func_type, elf_file *elf) {
@@ -396,10 +510,11 @@ void build_exterbal_stub(Elf32_Word func_sym_index, struct f_func *func_type, el
     size_t stub_size = 0;
 
     stub_size += build_stub32_entry(elf);
+    stub_size += build_func32_argload(func_type, elf);
     stub_size += build_change_64_to_32(elf);
     stub_size += build_func32_caller(copy_index, elf);
     stub_size += build_change_32_to_64(elf);
-    stub_size += build_stub32_exit(elf);
+    stub_size += build_stub32_exit(func_type, elf);
 
     // Use the original symbol as the stub symbol
     // so relocations will use this one
