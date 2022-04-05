@@ -25,7 +25,7 @@ test-32.o: mvp/test-64.c
 stub32to64.o: stub32to64.s
 	as --32 -o stub32to64.o stub32to64.s
 
-newelf.o: converter test-64.o mvp/test.flist
+newelf.o: converter test-64.o mvp/test.flist mvp/test.c
 	./converter test-64.o mvp/test.flist $@
 
 mvp.out: newelf.o mvp/test.c

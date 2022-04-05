@@ -1,3 +1,6 @@
 doo int int
-foo longlong longlong
-bar longlong int longlong
+foo int int
+bar int uint int int
+id longlong longlong
+add longlong longlong longlong
+mod void ptr

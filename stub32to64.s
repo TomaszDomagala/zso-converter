@@ -28,7 +28,7 @@ lretl
 fun_stub_64:
 movq 8(%rbp), %rdi
 movq 12(%rbp), %rsi
-movq 16(%rbp), %rbx
+movq 16(%rbp), %rdx
 movq 20(%rbp), %rcx
 movq 24(%rbp), %r8
 movq 28(%rbp), %r9

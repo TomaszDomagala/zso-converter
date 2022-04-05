@@ -181,7 +181,7 @@ the types of the arguments.
 
   1b:	48 8b 7d 08          	mov    0x8(%rbp),%rdi
   1f:	48 8b 75 0c          	mov    0xc(%rbp),%rsi
-  23:	48 8b 5d 10          	mov    0x10(%rbp),%rbx
+  23:	48 8b 55 10          	mov    0x10(%rbp),%rdx
   27:	48 8b 4d 14          	mov    0x14(%rbp),%rcx
   2b:	4c 8b 45 18          	mov    0x18(%rbp),%r8
   2f:	4c 8b 4d 1c          	mov    0x1c(%rbp),%r9
@@ -191,7 +191,7 @@ const int argument_pos = stacktoreg_instr - 1;
 const char stack_to_reg[] = {
     0x48, 0x8b, 0x7d, 0x08,  // mov 0x8(%rbp),%rdi
     0x48, 0x8b, 0x75, 0x0c,  // mov 0xc(%rbp),%rsi
-    0x48, 0x8b, 0x5d, 0x10,  // mov 0x10(%rbp),%rbx
+    0x48, 0x8b, 0x55, 0x10,  // mov 0x10(%rbp),%rdx
     0x48, 0x8b, 0x4d, 0x14,  // mov 0x14(%rbp),%rcx
     0x4c, 0x8b, 0x45, 0x18,  // mov 0x18(%rbp),%r8
     0x4c, 0x8b, 0x4d, 0x1c,  // mov 0x1c(%rbp),%r9
