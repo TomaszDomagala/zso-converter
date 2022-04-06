@@ -33,6 +33,14 @@ movq 20(%rbp), %rcx
 movq 24(%rbp), %r8
 movq 28(%rbp), %r9
 
+movl 8(%rbp), %edi
+movl 12(%rbp), %esi
+movl 16(%rbp), %edx
+movl 20(%rbp), %ecx
+movl 24(%rbp), %r8d
+movl 28(%rbp), %r9d
+
+
 call myfunc
 
 

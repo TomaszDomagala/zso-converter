@@ -1,23 +1,36 @@
-#include <sys/mman.h>
 #include <stdio.h>
+#define MAXDEPTH 4
+int r32(int, int *);
 
-
-extern int bar(int a, int b);
-
-void doo(char* str){
-	printf("%s\n", str);
+void print_str(char *str) {
+	printf("%s", str);
 }
 
+void print_ptr(void *ptr) {
+    printf("%p\n", ptr);
+}
 
-long long real_main(){
-	int a = 1;
-	int b = 2;
+int r64(int depth, int *verify) {
+    int test __attribute__((aligned(16)));
+	print_str("previous pointer of r32: ");
+	print_ptr(verify);
+    // if (((long)verify) & 0xf)
+    //     return 1;
 
-	return bar(a, b);
+    if (depth == MAXDEPTH) {
+        return 0;
+    } else
+        return r32(depth + 1, &test);
+}
+
+int real_main() {
+    if (r64(0, (int *)0x10) != 0)
+        return -1;
+
+    printf("OK\n");
+    return 0;
 }
 
 int main() {
-	long long res = real_main();
-	printf("res: %lld\n", res);
-	return 0;
+    return real_main();
 }

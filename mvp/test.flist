@@ -1,3 +1,4 @@
-doo void ptr
-foo int int
-bar int int int
+r32 int int ptr
+r64 int int ptr
+print_ptr void ptr
+print_str void ptr
