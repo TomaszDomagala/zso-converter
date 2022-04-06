@@ -9,7 +9,6 @@
 #include "fatal.h"
 #include "funcfile.h"
 #include "list.h"
-#include "prints.h"
 #include "stubs.h"
 
 int main(int argc, char* argv[]) {
