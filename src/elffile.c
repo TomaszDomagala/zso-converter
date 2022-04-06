@@ -73,7 +73,9 @@ elf_file* read_elf(char* filename) {
             fatalf("could not read section data in %s\n", filename);
         }
     }
-    fclose(file);
+    if(fclose(file)) {
+        sysfatalf("fclose", "could not close %s\n", filename);
+    }
 
     // section data conversion
     convert_sections(elf32);

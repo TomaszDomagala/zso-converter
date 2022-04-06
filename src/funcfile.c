@@ -81,38 +81,36 @@ list_t* parse_funcs(char* lines) {
 }
 
 list_t* read_funcs(char* filename) {
-    size_t content_capacity = 1024;
-    char* funcs_content = malloc(content_capacity);
+    FILE* funcfile = fopen(filename, "r");
+    if (funcfile == NULL) {
+        sysfatalf("fopen", "Could not open file %s", filename);
+    }
 
-    funcs_content = malloc(content_capacity);
+    if (-1 == fseek(funcfile, 0, SEEK_END)) {
+        sysfatalf("fseek", "Could not seek to end of file %s", filename);
+    }
+    long content_size = ftell(funcfile);
+    if (content_size == -1) {
+        sysfatalf("ftell", "Could not get file size of file %s", filename);
+    }
+    content_size += 1;  // extra space for null terminator
+    if (-1 == fseek(funcfile, 0, SEEK_SET)) {
+        sysfatalf("fseek", "Could not seek to start of file %s", filename);
+    }
+    char* funcs_content = malloc(content_size);
     if (funcs_content == NULL) {
         sysfatal("malloc", "Could not allocate memory for functions content");
     }
+    memset(funcs_content, 0, content_size);
 
-    FILE* funcfile = fopen(filename, "r");
-    if (funcfile == NULL) {
-        fatalf("Could not open %s\n", filename);
+    size_t n = fread(funcs_content, 1, content_size - 1, funcfile);
+    if (n == 0 && ferror(funcfile)) {
+            sysfatalf("fread", "Could not read file %s", filename);
+    }
+    if (fclose(funcfile) != 0) {
+        sysfatalf("fclose", "Could not close file %s", filename);
     }
 
-    size_t content_size = 0;
-
-    while (1) {
-        if (content_size >= content_capacity) {
-            content_capacity = content_capacity * 2;
-            funcs_content = realloc(funcs_content, content_capacity);
-            if (funcs_content == NULL) {
-                sysfatal("realloc", "Could not allocate memory for functions file");
-            }
-        }
-        size_t n = fread(funcs_content + content_size, 1, content_capacity - content_size, funcfile);
-        if (ferror(funcfile)) {
-            sysfatalf("fread", "Could not read %s\n", filename);
-        }
-        if (feof(funcfile)) {
-            break;
-        }
-        content_size += n;
-    }
     list_t* functions = parse_funcs(funcs_content);
 
     printf("file %s contains %ld functions\n", filename, list_size(functions));
