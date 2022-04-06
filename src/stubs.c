@@ -1,8 +1,8 @@
 #include "stubs.h"
 
 #include <elf.h>
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "fatal.h"
 #include "funcfile.h"
@@ -94,13 +94,15 @@ This is 32-bit code.
    3:	53                   	push   %ebx
    4:	57                   	push   %edi
    5:	56                   	push   %esi
+   6:	83 ec 08             	sub    $0x8,%esp
 */
 char stub_entry_code[] = {
-    0x55,        // push %ebp
-    0x89, 0xe5,  // mov %esp,%ebp
-    0x53,        // push %ebx
-    0x57,        // push %edi
-    0x56,        // push %esi
+    0x55,             // push %ebp
+    0x89, 0xe5,       // mov %esp,%ebp
+    0x53,             // push %ebx
+    0x57,             // push %edi
+    0x56,             // push %esi
+    0x83, 0xec, 0xc,  // sub $0x8,%esp
 };
 size_t build_stub64_entry(elf_file *elf) {
     return text_push(elf, stub_entry_code, sizeof(stub_entry_code));
@@ -161,9 +163,8 @@ const instr_arg_t stack_to_reg4[] = {
     {{0x44, 0x8b, 0x4d, 0x1c}, 4, 3},  // mov 0x1c(%rbp),%r9d
 };
 
-
 int align16diff(int value) {
-    return 20 - (value % 16);
+    return 24 - (value % 16);
 }
 
 size_t build_func64_argload(struct f_func *func_type, elf_file *elf) {
@@ -189,8 +190,6 @@ size_t build_func64_argload(struct f_func *func_type, elf_file *elf) {
         code_size += instr->code_size;
         arg_offset += offset_delta;
     }
-
-
 
     return text_push(elf, code, code_size);
 }
@@ -266,6 +265,7 @@ size_t build_change_64_to_32(elf_file *elf) {
 /*
 This is 32-bit code.
 
+   9:	83 c4 0c             	add    $0xc,%esp
   18:	5e                   	pop    %esi
   19:	5f                   	pop    %edi
   1a:	5b                   	pop    %ebx
@@ -273,19 +273,16 @@ This is 32-bit code.
   1c:	c3                   	ret
 */
 char stub_exit_code[] = {
-    0x5e,  // pop %esi
-    0x5f,  // pop %edi
-    0x5b,  // pop %ebx
-    0x5d,  // pop %ebp
-    0xc3,  // ret
+    0x83, 0xc4, 0xc,  // add $0x8,%esp
+    0x5e,             // pop %esi
+    0x5f,             // pop %edi
+    0x5b,             // pop %ebx
+    0x5d,             // pop %ebp
+    0xc3,             // ret
 };
 size_t build_stub64_exit(elf_file *elf) {
     return text_push(elf, stub_exit_code, sizeof(stub_exit_code));
 }
-
-
-
-
 
 /*
 This is 64-bit code.
@@ -355,7 +352,7 @@ size_t build_func32_argload(struct f_func *func_type, elf_file *elf) {
         return 0;
     }
     char code[256];
-    size_t code_size = subrsp_instr.code_size; // room for stack align code.
+    size_t code_size = subrsp_instr.code_size;  // room for stack align code.
 
     int total_arg_size = 0;
 
@@ -369,7 +366,7 @@ size_t build_func32_argload(struct f_func *func_type, elf_file *elf) {
         } else {
             arg_size = 4;
             instr = &reg_to_stack_4[i];
-        }        
+        }
         cpyinstrarg(code + code_size, &subrsp_instr, arg_size);
         code_size += subrsp_instr.code_size;
         cpyinstr(code + code_size, instr);
@@ -378,8 +375,6 @@ size_t build_func32_argload(struct f_func *func_type, elf_file *elf) {
         total_arg_size += arg_size;
     }
     // align stack
-    printf("total_arg_size: %d\n", total_arg_size);
-    printf("xd: %d\n", align16diff(total_arg_size));
     cpyinstrarg(code, &subrsp_instr, align16diff(total_arg_size));
 
     return text_push(elf, code, code_size);
@@ -523,5 +518,5 @@ void build_external_stub(Elf32_Word func_sym_index, struct f_func *func_type, el
     stub_sym->st_size = stub_size;
     stub_sym->st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC);
     stub_sym->st_other = STV_DEFAULT;
-    stub_sym->st_shndx = 1;  // .text section index FIXME hardcoded
+    stub_sym->st_shndx = section_index(".text", elf);
 }

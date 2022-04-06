@@ -13,6 +13,11 @@ movl %esp, %ebp
 pushl %ebx
 pushl %edi
 pushl %esi
+subl $8, %esp
+addl $8, %esp
+
+movl %ebp, %esp
+popl %ebp
 # align stack
 # subl $4, %esp
 
@@ -24,6 +29,7 @@ movl $0x33, 4(%esp)
 movl %ebx, (%esp)
 lretl
 
+/*
 .code64
 fun_stub_64:
 movq 8(%rbp), %rdi
@@ -53,6 +59,8 @@ subl $8, %esp
 movl $0x23, 4(%rsp)
 movl %ebx, (%rsp)
 lretl
+*/
+
 .code32
 fun_stub_out:
 
