@@ -6,3 +6,4 @@
 converter
 *.o
 *.out
+z1_test/test-*
