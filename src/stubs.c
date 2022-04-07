@@ -12,6 +12,8 @@ void build_global_stub(Elf32_Word func_sym_index, struct f_func *func_type, elf_
 
 void build_external_stub(Elf32_Word func_sym_index, struct f_func *func_type, elf_file *elf);
 
+void sort_symtab(elf_file *elf);
+
 typedef struct {
     const char code[16];
     size_t code_size;
@@ -77,6 +79,8 @@ void build_stubs(elf_file *elf, list_t *functions) {
             build_external_stub(i, f_func, elf);
         }
     }
+
+    sort_symtab(elf);
 }
 
 char *prefixstr(const char *prefix, char *str) {
@@ -459,16 +463,17 @@ void build_global_stub(Elf32_Word func_sym_index, struct f_func *func_type, elf_
     elf_section *strtab = find_section(".strtab", elf);
     elf_section *symtab = find_section(".symtab", elf);
 
-    Elf32_Sym *sym = (Elf32_Sym *)symtab->s_data + func_sym_index;
+    Elf32_Sym *orig_func_sym = (Elf32_Sym *)symtab->s_data + func_sym_index;
 
-    Elf32_Word func_name = sym->st_name;
+    Elf32_Word func_name = orig_func_sym->st_name;
     Elf32_Word stub_start = text->s_header.sh_size;
     size_t stub_size = 0;
 
     // swap original name with stub name
     char *name = prefixstr("__orig_loc__", strtab->s_data + func_name);
     Elf32_Word name_index = strtab_push(elf, name);
-    sym->st_name = name_index;
+    orig_func_sym->st_name = name_index;
+    orig_func_sym->st_info = ELF32_ST_INFO(STB_LOCAL, STT_FUNC);
 
     stub_size += build_stub64_entry(elf);
     stub_size += build_change_32_to_64(elf);
@@ -483,7 +488,7 @@ void build_global_stub(Elf32_Word func_sym_index, struct f_func *func_type, elf_
         .st_size = stub_size,
         .st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC),
         .st_other = STV_DEFAULT,
-        .st_shndx = sym->st_shndx,  // .text section index
+        .st_shndx = orig_func_sym->st_shndx,  // .text section index
     };
     symtab_push(elf, &stub_sym);
 }
@@ -519,4 +524,76 @@ void build_external_stub(Elf32_Word func_sym_index, struct f_func *func_type, el
     stub_sym->st_info = ELF32_ST_INFO(STB_GLOBAL, STT_FUNC);
     stub_sym->st_other = STV_DEFAULT;
     stub_sym->st_shndx = section_index(".text", elf);
+}
+
+struct sort_symbol {
+    Elf32_Sym content;
+    Elf32_Word original_index;
+    Elf32_Word current_index;
+};
+
+void sort_symtab(elf_file *elf) {
+    elf_section *symtab = find_section(".symtab", elf);
+
+    list_t *symbols = list_create(sizeof(struct sort_symbol));
+
+    struct sort_symbol sort_sym;
+    sort_sym.current_index = -1;
+
+    // First add all local symbols, then all other symbols
+    for (int j = 0; j <= 1; j++) {
+        for (Elf32_Word i = 0; i < symtab->s_header.sh_size / sizeof(Elf32_Sym); i++) {
+            Elf32_Sym *sym = (Elf32_Sym *)symtab->s_data + i;
+            unsigned char bind = ELF32_ST_BIND(sym->st_info);
+
+            if ((j == 0 && bind == STB_LOCAL) || (j == 1 && bind != STB_LOCAL)) {
+                sort_sym.content = *sym;
+                sort_sym.original_index = i;
+                sort_sym.current_index = list_size(symbols);
+                list_add(symbols, &sort_sym);
+            }
+        }
+    }
+
+    // write new symtab
+    iterate_list(symbols, node) {
+        struct sort_symbol *sym = list_element(node);
+        ((Elf32_Sym *)symtab->s_data)[sym->current_index] = sym->content;
+    }
+    // Set .symtab's sh_info to index of the first non-local symbol
+    iterate_list(symbols, node){
+        struct sort_symbol *sym = list_element(node);
+        if(ELF32_ST_BIND(sym->content.st_info) != STB_LOCAL) {
+            symtab->s_header.sh_info = sym->current_index;
+            break;
+        }
+    }
+
+    // fix the symbol table indexes for relocations
+    iterate_list(elf->e_sections, node){
+        elf_section *sec = list_element(node);
+        if (sec->s_header.sh_type != SHT_REL) {
+            continue;
+        }
+
+        for (Elf32_Word i = 0; i < sec->s_header.sh_size / sizeof(Elf32_Rel); i++) {
+            Elf32_Rel *rel = (Elf32_Rel *)sec->s_data + i;
+            Elf32_Word type = ELF32_R_TYPE(rel->r_info);
+            Elf32_Word sym_index = ELF32_R_SYM(rel->r_info);
+            Elf32_Word new_sym_index = -1;
+
+            iterate_list(symbols, snode){
+                struct sort_symbol* sym = list_element(snode);
+                if(sym->original_index == sym_index) {
+                    new_sym_index = sym->current_index;
+                    break;
+                }
+            }
+            // sanity check, should never happen
+            if(new_sym_index == -1) {
+                fatalf("could not match relocation symbol index %d\n", sym_index);
+            }
+            rel->r_info = ELF32_R_INFO(new_sym_index, type);
+        }
+    }
 }
