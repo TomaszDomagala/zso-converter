@@ -86,42 +86,40 @@ void adjust_addend(elf_section* text, Elf32_Addr r_offset, Elf32_Sword r_addend)
     memcpy(text->s_data + r_offset, &r_addend, sizeof(Elf32_Sword));
 }
 
-void convert_relatext(elf_section* relatext) {
-    elf_file* elf = relatext->s_elf;
+void convert_rela(elf_section* rela_section) {
+    elf_file* elf = rela_section->s_elf;
     elf_section* shstrtab = find_section(".shstrtab", elf);
 
-    // replace .rela.text string with .rel.text string
+    // replace .rela.foo string with .rel.foo string
     // actually, replacing prefix .rela with \0.rel and changing sh_name
-    // is necessary, as .text section can use .rela.text substring as its name
-    memset((char*)shstrtab->s_data + relatext->s_header.sh_name, 0, strlen(".rela"));
-    memcpy((char*)shstrtab->s_data + relatext->s_header.sh_name, "\0.rel", 1 + strlen(".rel"));
-    relatext->s_header.sh_name++;
+    // is necessary, as .foo section can use .rela.foo substring as its name
+    memset((char*)shstrtab->s_data + rela_section->s_header.sh_name, 0, strlen(".rela"));
+    memcpy((char*)shstrtab->s_data + rela_section->s_header.sh_name, "\0.rel", 1 + strlen(".rel"));
+    rela_section->s_header.sh_name++;
 
-    elf_section* text = find_section(".text", elf);
-    elf_section* symtab = find_section(".symtab", elf);
-    elf_section* strtab = find_section(".strtab", elf);
+    Elf32_Word rel_num = rela_section->s_header.sh_size / sizeof(Elf64_Rela);
+    Elf32_Shdr relsec_shdr;
 
-    Elf32_Word rel_num = relatext->s_header.sh_size / sizeof(Elf64_Rela);
-    Elf32_Shdr reltext_shdr;
+    relsec_shdr.sh_name = rela_section->s_header.sh_name;  // now changed to .rel.foo
+    relsec_shdr.sh_type = SHT_REL;
+    relsec_shdr.sh_flags = rela_section->s_header.sh_flags;
+    relsec_shdr.sh_addr = rela_section->s_header.sh_addr;
+    relsec_shdr.sh_offset = rela_section->s_header.sh_offset;
+    relsec_shdr.sh_size = sizeof(Elf32_Rel) * rel_num;
+    relsec_shdr.sh_link = rela_section->s_header.sh_link;
+    relsec_shdr.sh_info = rela_section->s_header.sh_info;
+    relsec_shdr.sh_addralign = rela_section->s_header.sh_addralign;
+    relsec_shdr.sh_entsize = sizeof(Elf32_Rel);
 
-    reltext_shdr.sh_name = relatext->s_header.sh_name;  // now changed to .rel.text
-    reltext_shdr.sh_type = SHT_REL;
-    reltext_shdr.sh_flags = relatext->s_header.sh_flags;
-    reltext_shdr.sh_addr = relatext->s_header.sh_addr;
-    reltext_shdr.sh_offset = relatext->s_header.sh_offset;
-    reltext_shdr.sh_size = sizeof(Elf32_Rel) * rel_num;
-    reltext_shdr.sh_link = relatext->s_header.sh_link;
-    reltext_shdr.sh_info = relatext->s_header.sh_info;
-    reltext_shdr.sh_addralign = relatext->s_header.sh_addralign;
-    reltext_shdr.sh_entsize = sizeof(Elf32_Rel);
-
-    Elf32_Rel* rels = malloc(reltext_shdr.sh_size);
+    Elf32_Rel* rels = malloc(relsec_shdr.sh_size);
     if (!rels) {
         fatal("could not allocate memory for rel.text section\n");
     }
 
+    elf_section* relocated_section = find_section_by_index(relsec_shdr.sh_info, elf);
+
     for (Elf32_Word i = 0; i < rel_num; i++) {
-        Elf64_Rela* rela64 = (Elf64_Rela*)(relatext->s_data) + i;
+        Elf64_Rela* rela64 = (Elf64_Rela*)(rela_section->s_data) + i;
         Elf32_Rel* rel32 = rels + i;
         rel32->r_offset = rela64->r_offset;
 
@@ -142,39 +140,17 @@ void convert_relatext(elf_section* relatext) {
                 warnf("unsupported relocation type: %d\n", type64);
                 break;
         }
-
         rel32->r_info = ELF32_R_INFO(sym, type32);
 
-
-        Elf32_Sym* sym32 = (Elf32_Sym*)(symtab->s_data) + sym;
-        printf("sym name: %s\n", (char*)strtab->s_data + sym32->st_name);
-
-        switch (ELF32_ST_TYPE(sym32->st_info)) {
-            case STT_FUNC:
-                printf("relocation %d is function\n", i);
-                break;
-            case STT_SECTION:
-                printf("relocation %d is section\n", i);
-                break;
-            case STT_OBJECT:
-                printf("relocation %d is object\n", i);
-                break;
-            case STT_NOTYPE:
-                printf("relocation %d is notype\n", i);
-                break;
-            default:
-                printf("relocation %d is unknown\n", i);
-                break;
-        }
-
-        adjust_addend(text, rel32->r_offset, rela64->r_addend);
+        adjust_addend(relocated_section, rel32->r_offset, rela64->r_addend);
     }
-    free(relatext->s_data);
-    relatext->s_data = rels;
-    relatext->s_header = reltext_shdr;
+
+    free(rela_section->s_data);
+    rela_section->s_data = rels;
+    rela_section->s_header = relsec_shdr;
 }
 
-void create_reltext(elf_file* elf){
+void create_reltext(elf_file* elf) {
     const char* name = ".rel.text";
     Elf32_Shdr reltext_shdr;
     reltext_shdr.sh_name = shstrtab_push(elf, name);
@@ -199,17 +175,27 @@ void create_reltext(elf_file* elf){
 }
 
 void convert_sections(elf_file* elf) {
+    elf_section* shstrtab = find_section(".shstrtab", elf);
+
+    printf("\nconverting sections:\n");
+    printf("> .symtab\n");
+
     convert_symtab(find_section(".symtab", elf));
 
-    elf_section* relatext = try_find_section(".rela.text", elf);
-    if (relatext) {
-        convert_relatext(relatext);
-    }else{
-        printf("no .rela.text section found\n");
+    iterate_list(elf->e_sections, node) {
+        elf_section* section = list_element(node);
+        if (section->s_header.sh_type == SHT_RELA) {
+            printf("> %s from RELA to REL\n", (char*)shstrtab->s_data + section->s_header.sh_name);
+            convert_rela(section);
+        }
+    }
+
+    elf_section* reltext = try_find_section(".rel.text", elf);
+    if (!reltext) {
+        printf("no .rel.text section found\n");
         printf("creating .rel.text section\n");
         create_reltext(elf);
     }
-
 }
 
 void check_header(Elf64_Ehdr header) {

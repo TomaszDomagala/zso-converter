@@ -31,6 +31,8 @@ elf_section* find_section(const char* name, elf_file* elf);
 
 elf_section* try_find_section(const char* name, elf_file* elf);
 
+elf_section* find_section_by_index(int index, elf_file* elf);
+
 char* section_name(elf_section* section);
 
 int section_index(const char* name, elf_file* elf);

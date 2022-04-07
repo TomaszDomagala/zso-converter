@@ -73,14 +73,20 @@ elf_file* read_elf(char* filename) {
             fatalf("could not read section data in %s\n", filename);
         }
     }
-    if(fclose(file)) {
+    if (fclose(file)) {
         sysfatalf("fclose", "could not close %s\n", filename);
+    }
+
+    printf("\nfile %s contains %ld sections:\n", filename, list_size(sections));
+    elf_section* shstrtab = find_section(".shstrtab", elf32);
+
+    iterate_list(elf32->e_sections, node) {
+        elf_section* section = list_element(node);
+        printf("> section %s\n", (char*)shstrtab->s_data + section->s_header.sh_name);
     }
 
     // section data conversion
     convert_sections(elf32);
-
-    printf("file %s contains %ld sections\n", filename, list_size(sections));
 
     return elf32;
 }
@@ -262,4 +268,16 @@ size_t text_push(elf_file* elf, char* bytes, size_t size) {
     memcpy(text->s_data + text->s_header.sh_size, bytes, size);
     text->s_header.sh_size = new_size;
     return size;
+}
+
+elf_section* find_section_by_index(int index, elf_file* elf) {
+    int i = 0;
+    iterate_list(elf->e_sections, node) {
+        elf_section* section = list_element(node);
+        if (i == index) {
+            return section;
+        }
+        i++;
+    }
+    fatalf("could not find section with index %d\n", index);
 }

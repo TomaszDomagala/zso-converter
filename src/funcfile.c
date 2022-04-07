@@ -113,9 +113,10 @@ list_t* read_funcs(char* filename) {
 
     list_t* functions = parse_funcs(funcs_content);
 
-    printf("file %s contains %ld functions\n", filename, list_size(functions));
+    printf("\nfile %s contains %ld functions:\n", filename, list_size(functions));
     iterate_list(functions, node) {
         struct f_func* func = list_element(node);
+        printf("> ");
         print_func(func);
     }
 
