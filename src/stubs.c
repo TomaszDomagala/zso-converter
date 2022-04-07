@@ -589,10 +589,6 @@ void sort_symtab(elf_file *elf) {
                     break;
                 }
             }
-            // sanity check, should never happen
-            if(new_sym_index == -1) {
-                fatalf("could not match relocation symbol index %d\n", sym_index);
-            }
             rel->r_info = ELF32_R_INFO(new_sym_index, type);
         }
     }

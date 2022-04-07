@@ -21,18 +21,9 @@ int main(int argc, char* argv[]) {
     printf("functions file: %s\n", argv[2]);
     printf("output elf file: %s\n", argv[3]);
 
-    elf_file* elf = read_elf(argv[1]);
-
     list_t* functions = read_funcs(argv[2]);
 
-    // elf_section* eh_frame = try_find_section(".eh_frame", elf);
-    // if (eh_frame != NULL) {
-    //     memset(&eh_frame->s_header, 0, sizeof(eh_frame->s_header));
-    // }
-    // elf_section* rela_eh_frame = try_find_section(".rela.eh_frame", elf);
-    // if (rela_eh_frame != NULL) {
-    //     memset(&rela_eh_frame->s_header, 0, sizeof(rela_eh_frame->s_header));
-    // }
+    elf_file* elf = read_elf(argv[1]);
 
     build_stubs(elf, functions);
 

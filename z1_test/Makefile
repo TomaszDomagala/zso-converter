@@ -1,6 +1,6 @@
 .SECONDARY:
 
-all: test-data test-multiargs test-rodata test-recurse
+all: test-data test-multiargs test-rodata test-recurse test-ptrret
 
 common.o:
 	gcc common.c -c -m32 -no-pie -o common.o
