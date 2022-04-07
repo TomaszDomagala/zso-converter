@@ -27,14 +27,40 @@ elf_file* read_elf(char* filename);
 
 void write_elf(elf_file* elf, char* filename);
 
+/**
+ * @brief returns section with given name, panics if not found
+ * 
+ * @param name the name of the section
+ * @param elf the elf file to search
+ * @return elf_section* the section with the given name
+ */
 elf_section* find_section(const char* name, elf_file* elf);
 
+/**
+ * @brief returns section with given index or NULL if not found
+ * 
+ * @param name the index of the section
+ * @param elf the elf file to search
+ * @return elf_section* the section with the given index
+ */
 elf_section* try_find_section(const char* name, elf_file* elf);
 
+/**
+ * @brief return section with given index, panics if not found
+ * 
+ * @param index the index of the section
+ * @param elf the elf file to search
+ * @return elf_section* the section with the given index
+ */
 elf_section* find_section_by_index(int index, elf_file* elf);
 
-char* section_name(elf_section* section);
-
+/**
+ * @brief returns the index of the section with the given name
+ * 
+ * @param name the name of the section
+ * @param elf the elf file to search
+ * @return int the index of the section
+ */
 int section_index(const char* name, elf_file* elf);
 
 /**
