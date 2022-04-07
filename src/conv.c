@@ -16,7 +16,7 @@ Elf32_Ehdr convert_elf_header(Elf64_Ehdr ehdr64) {
     ehdr32.e_version = EV_CURRENT;
     ehdr32.e_entry = 0;
     ehdr32.e_phoff = 0;
-    ehdr32.e_shoff = (Elf32_Off)ehdr64.e_shoff;  // TODO: fix this, different int sizes
+    ehdr32.e_shoff = (Elf32_Off)ehdr64.e_shoff;
     ehdr32.e_flags = ehdr64.e_flags;
     ehdr32.e_ehsize = (Elf32_Half)52;
     ehdr32.e_phentsize = 0;
@@ -45,11 +45,6 @@ Elf32_Shdr convert_section_header(Elf64_Shdr shdr64) {
     return shdr32;
 }
 
-bool is_symtab(elf_section* section) {
-    char* name = section_name(section);
-    return strcmp(name, ".symtab") == 0;
-}
-
 /**
  * @brief Converts Elf64_Sym to Elf32_Sym
  * This function expects section to be initially converted section with untouched data
@@ -75,11 +70,6 @@ void convert_symtab(elf_section* symtab) {
     symtab->s_data = syms32;
     symtab->s_header.sh_entsize = sizeof(Elf32_Sym);
     symtab->s_header.sh_size = sizeof(Elf32_Sym) * snum;
-}
-
-bool is_relatext(elf_section* section) {
-    char* name = section_name(section);
-    return strcmp(name, ".rela.text") == 0;
 }
 
 void adjust_addend(elf_section* text, Elf32_Addr r_offset, Elf32_Sword r_addend) {
