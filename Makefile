@@ -34,6 +34,7 @@ mvp.out: newelf.o mvp/test.c
 .PHONY: clean
 clean:	## Clean up
 	@rm -f *.o test
+	@rm -f *.out
 	@rm -f converter
 
 .PHONY: help

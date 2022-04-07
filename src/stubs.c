@@ -83,6 +83,18 @@ void build_stubs(elf_file *elf, list_t *functions) {
     sort_symtab(elf);
 }
 
+Elf32_Word text_sym_index(elf_file* elf){
+    elf_section* symtab = find_section(".symtab", elf);
+    int text_index = section_index(".text", elf);
+    for (Elf32_Word i = 0; i < symtab->s_header.sh_size / symtab->s_header.sh_entsize; i++) {
+        Elf32_Sym* sym = (Elf32_Sym*)symtab->s_data + i;
+        if (ELF32_ST_TYPE(sym->st_info) == STT_SECTION && sym->st_shndx == text_index) {
+            return i;
+        }
+    }
+    fatal("could not find .text symbol in symtab\n");
+} 
+
 char *prefixstr(const char *prefix, char *str) {
     char *newstr = malloc(strlen(prefix) + strlen(str) + 1);
     strcpy(newstr, prefix);
@@ -139,7 +151,7 @@ size_t build_change_32_to_64(elf_file *elf) {
 
     Elf32_Rel lea_rel = {
         .r_offset = r_offset,
-        .r_info = ELF32_R_INFO(2, R_386_32),  // FIXME: this is hardcoded for now, 2 is .text section symbol
+        .r_info = ELF32_R_INFO(text_sym_index(elf), R_386_32),
     };
     reltext_push(elf, &lea_rel);
 
@@ -256,7 +268,7 @@ size_t build_change_64_to_32(elf_file *elf) {
 
     Elf32_Rel lea_rel = {
         .r_offset = r_offset,
-        .r_info = ELF32_R_INFO(2, R_386_32),  // FIXME: this is hardcoded for now, 2 is .text section symbol
+        .r_info = ELF32_R_INFO(text_sym_index(elf), R_386_32),
     };
 
     reltext_push(elf, &lea_rel);
